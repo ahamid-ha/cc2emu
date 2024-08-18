@@ -35,9 +35,9 @@ void display_text(struct processor_state *p) {
             if (1024 + (line * 32) + col == 1024 + 32 && data == 0xc6 && in_exit == 3) exit(0);
 
             uint8_t display_char = display_chars[data & 63];
-            if (display_char >= 128) display_char = 32;
-            printf("%02x%c ", data, display_char);
-            // putc(data, stdout);
+            if (data >= 128) display_char = 32;
+            // printf("%02x%c ", data, display_char);
+            putc(display_char, stdout);
         }
         putc('\n', stdout);
     }
@@ -55,7 +55,7 @@ void processor_store_8(struct processor_state *p, uint16_t addr, uint8_t value) 
         }
     }
 
-    // if (addr >= 0x400 && addr < 0x600 && value != 0 && value != 0x60) display_text(p);
+    if (addr >= 0x400 && addr < 0x600 && value != 0 && value != 0x60) display_text(p);
 }
 
 void processor_register_bus_adaptor(struct processor_state *p, struct bus_adaptor *adaptor) {
@@ -91,9 +91,9 @@ void processor_init(struct processor_state *p) {
 
 #define _bit(x) (x?'1':'0')
 void processor_dump(struct processor_state *p) {
-    printf("    Processor dump:\n");
-    printf("      A:%02X, B:%02X\n", p->A, p->B);
-    printf("      X:%04X, Y:%04X, U:%04X, S:%04X, PC:%04X, DP:%02X\n", p->X, p->Y, p->U, p->S, p->PC, p->DP);
+    printf("    Processor dump:");
+    printf("      A:%02X, B:%02X, D:%04X", p->A, p->B, p->D);
+    printf("      X:%04X, Y:%04X, U:%04X, S:%04X, PC:%04X, DP:%02X", p->X, p->Y, p->U, p->S, p->PC, p->DP);
     printf("      C:%c, V:%c, Z:%c, N:%c, I:%c, H:%c, F:%c, E:%c\n\n", _bit(p->C), _bit(p->V), _bit(p->Z), _bit(p->N), _bit(p->I), _bit(p->H), _bit(p->F), _bit(p->E));
 }
 
@@ -288,6 +288,7 @@ uint16_t __get_address_indexed(struct processor_state *p) {
             break;
         case 0b1111:
             index = processor_load_16(p, p->PC++);
+            p->PC++;
             break;
     }
     if (indirect) {
@@ -306,39 +307,107 @@ void __update_CC_data16(struct processor_state *p, uint16_t data) {
     p->Z = data == 0 ? 1 : 0;
 }
 
-void __opcode_adca(struct processor_state *p, uint16_t address) {
+void __opcode_adc(struct processor_state *p, uint16_t address, uint8_t *reg) {
     uint8_t data = processor_load_8(p, address);
-    uint8_t result;
-    p->V = __builtin_add_overflow(data, p->C, &result);
-    p->C = (int8_t)result < (int8_t)data;
-    p->V |= __builtin_add_overflow(result, p->A, &p->A);
-    p->C |= (int8_t)p->A < (int8_t)result;
-    __update_CC_data8(p, p->A);
-}
+    uint16_t result;
 
-void __opcode_adcb(struct processor_state *p, uint16_t address) {
-    uint8_t data = processor_load_8(p, address);
-    uint8_t result;
-    p->V = __builtin_add_overflow(data, p->C, &result);
-    p->C = (int8_t)result < (int8_t)data;
-    p->V |= __builtin_add_overflow(result, p->B, &p->B);
-    p->C |= (int8_t)p->B < (int8_t)result;
-    __update_CC_data8(p, p->B);
+    p->H = ((data & 0xf) + (*reg & 0xf) + (p->C ? 1 : 0)) & 0b00010000;
+    uint8_t b7c = ((data & 0x7f) + (*reg & 0x7f) + (p->C ? 1 : 0)) & 0b10000000;
+
+    result = data + *reg + (p->C ? 1 : 0);
+    p->C = (result & 0x0100) ? 1 : 0;
+    p->V = (p->C ? 1 : 0) != (b7c ? 1 : 0);
+
+    *reg = 0xff & result;
+    __update_CC_data8(p, *reg);
 }
 
 void __opcode_add8(struct processor_state *p, uint16_t address, uint8_t *reg) {
     uint8_t data = processor_load_8(p, address);
-    p->V = __builtin_add_overflow(data, *reg, reg);
-    p->C = (int8_t)*reg < (int8_t)data;
-    __update_CC_data8(p, *reg);
+    uint16_t result;
 
+    p->H = ((data & 0xf) + (*reg & 0xf)) & 0b00010000;
+    uint8_t b7c = ((data & 0x7f) + (*reg & 0x7f)) & 0b10000000;
+
+    result = data + *reg;
+    p->C = (result & 0x0100) ? 1 : 0;
+    p->V = (p->C ? 1 : 0) != (b7c ? 1 : 0);
+
+    *reg = 0xff & result;
+    __update_CC_data8(p, *reg);
 }
 
 void __opcode_add16(struct processor_state *p, uint16_t address, uint16_t *reg) {
     uint16_t data = processor_load_16(p, address);
-    p->V = __builtin_add_overflow(data, *reg, reg);
-    p->C = (int16_t)*reg < (int16_t)data;
+    uint32_t result;
+
+    uint16_t b7c = ((data & 0x7fff) + (*reg & 0x7fff)) & 0x8000;
+
+    result = data + *reg;
+    p->C = (result & 0x010000) ? 1 : 0;
+    p->V = (p->C ? 1 : 0) != (b7c ? 1 : 0);
+
+    *reg = 0xffff & result;
     __update_CC_data16(p, *reg);
+}
+
+void __opcode_and(struct processor_state *p, uint16_t address, uint8_t *reg) {
+    uint8_t data = processor_load_8(p, address);
+    *reg = *reg & data;
+    __update_CC_data8(p, *reg);
+    p->V = 0;
+}
+
+void __opcode_andcc(struct processor_state *p, uint16_t address) {
+    uint8_t data = processor_load_8(p, address);
+    p->CC = p->CC & data;
+}
+
+void __opcode_asl(struct processor_state *p, uint16_t address) {
+    uint8_t data = processor_load_8(p, address);
+    int new_c = data & 0x80 ? 1 : 0;
+    int bit6 = data & 0x40 ? 1 : 0;
+    int bit7 = data & 0x80 ? 1 : 0;
+    p->V = bit6 ^ bit7;
+    data = data << 1;
+    processor_store_8(p, address, data);
+    __update_CC_data8(p, data);
+    p->C = new_c;
+}
+
+void __opcode_asl_reg(struct processor_state *p, uint8_t *reg) {
+    uint8_t data = *reg;
+    int new_c = data & 0x80 ? 1 : 0;
+    int bit6 = data & 0x40 ? 1 : 0;
+    int bit7 = data & 0x80 ? 1 : 0;
+    p->V = bit6 ^ bit7;
+    *reg = data << 1;
+    __update_CC_data8(p, *reg);
+    p->C = new_c;
+}
+
+void __opcode_asr(struct processor_state *p, uint16_t address) {
+    uint8_t data = processor_load_8(p, address);
+    int bit7 = data & 0x80;
+    p->C = data & 1;
+    data = (data >> 1) | bit7;
+    processor_store_8(p, address, data);
+    __update_CC_data8(p, data);
+}
+
+void __opcode_asr_reg(struct processor_state *p, uint8_t *reg) {
+    uint8_t data = *reg;
+    int bit7 = data & 0x80;
+    p->C = data & 1;
+    *reg = (data >> 1) | bit7;
+    __update_CC_data8(p, *reg);
+}
+
+void __opcode_bit8(struct processor_state *p, uint16_t address, uint8_t *reg) {
+    uint8_t data = processor_load_8(p, address);
+    uint8_t result = *reg & data;
+    p->V = 0;
+    __update_CC_data8(p, result);
 }
 
 void __opcode_neg(struct processor_state *p, uint16_t address) {
@@ -348,6 +417,14 @@ void __opcode_neg(struct processor_state *p, uint16_t address) {
     __update_CC_data8(p, data);
     p->V = data == 0x80 ? 1 : 0;
     p->C = data == 0x0 ? 0 : 1;
+}
+
+void __opcode_inc(struct processor_state *p, uint16_t address) {
+    uint8_t data = processor_load_8(p, address);
+    p->V = data == 0x7F ? 1 : 0;
+    data++;
+    processor_store_8(p, address, 0);
+    __update_CC_data8(p, data);
 }
 
 void __opcode_clr(struct processor_state *p, uint16_t address) {
@@ -364,14 +441,6 @@ void __opcode_clr_reg(struct processor_state *p, uint8_t *reg) {
     p->Z = 1;
     p->V = 0;
     p->C = 0;
-}
-
-void __opcode_inc(struct processor_state *p, uint16_t address) {
-    uint8_t data = processor_load_8(p, address);
-    p->V = data == 0x7F ? 1 : 0;
-    data++;
-    processor_store_8(p, address, 0);
-    __update_CC_data8(p, data);
 }
 
 void __opcode_inc_reg(struct processor_state *p, uint8_t *reg) {
@@ -541,31 +610,42 @@ void __opcode_lsr8(struct processor_state *p, uint16_t address) {
     __update_CC_data8(p, data);
 }
 
-void __opcode_bit8(struct processor_state *p, uint16_t address, uint8_t *reg) {
-    uint8_t data = processor_load_8(p, address);
-    uint8_t result = *reg & data;
-    p->V = 0;
-    __update_CC_data8(p, result);
-}
-
 void __opcode_sub8(struct processor_state *p, uint16_t address, uint8_t *reg, int compare_only) {
     uint8_t data = processor_load_8(p, address);
-    uint8_t result;
-    p->V = __builtin_sub_overflow(*reg, data, &result);
-    p->C = data > *reg;
+    uint16_t result;
+
+    result = *reg - data;
+
+    p->C = result > 0xff;
+    p->V = (((*reg ^ result) & 0x80) && ((*reg ^ data) & 0x80)) ? 1 :0;
     __update_CC_data8(p, result);
 
-    if (!compare_only) *reg = result;
+    if (!compare_only) *reg = result & 0xff;
 }
 
 void __opcode_sub16(struct processor_state *p, uint16_t address, uint16_t *reg, int compare_only) {
     uint16_t data = processor_load_16(p, address);
-    uint16_t result;
-    p->V = __builtin_sub_overflow(*reg, data, &result);
-    p->C = data > *reg;
-    __update_CC_data8(p, result);
+    uint32_t result;
 
-    if (!compare_only) *reg = result;
+    result = *reg - data;
+
+    p->C = result > 0xffff;
+    p->V = (((*reg ^ result) & 0x8000) && ((*reg ^ data) & 0x8000)) ? 1 :0;
+    __update_CC_data16(p, result);
+
+    if (!compare_only) *reg = result & 0xffff;
+}
+
+void __opcode_sbc(struct processor_state *p, uint16_t address, uint8_t *reg) {
+    uint8_t data = processor_load_8(p, address);
+    uint16_t result;
+
+    result = *reg - data - (p->C ? 1 : 0);
+
+    p->C = result > 0xff;
+    p->V = (((*reg ^ result) & 0x80) && ((*reg ^ data) & 0x80)) ? 1 :0;
+    __update_CC_data8(p, result);
+    *reg = result & 0xff;
 }
 
 uint16_t __opcode_exg_get_value(struct processor_state *p, uint8_t code, int r_pos) {
@@ -595,7 +675,7 @@ uint16_t __opcode_exg_get_value(struct processor_state *p, uint8_t code, int r_p
                 return p->DP | (p->DP << 8);
             return p->DP | 0xff00;
     }
-    return 0;
+    return 0xffff;
 }
 void __opcode_exg_set_value(struct processor_state *p, uint8_t code, uint16_t value) {
     switch(code & 0xf) {
@@ -662,13 +742,6 @@ void __opcode_daa(struct processor_state *p) {
     __update_CC_data8(p, p->A);
 }
 
-void __opcode_and(struct processor_state *p, uint16_t address, uint8_t *reg) {
-    uint8_t data = processor_load_8(p, address);
-    *reg = *reg & data;
-    __update_CC_data8(p, *reg);
-    p->V = 0;
-}
-
 void __opcode_eor(struct processor_state *p, uint16_t address, uint8_t *reg) {
     uint8_t data = processor_load_8(p, address);
     *reg = *reg ^ data;
@@ -682,7 +755,7 @@ void __opcode_rol(struct processor_state *p, uint16_t address) {
     int bit6 = data & 0x40 ? 1 : 0;
     int bit7 = data & 0x80 ? 1 : 0;
     p->V = bit6 ^ bit7;
-    data = (data << 1) | p->C;
+    data = (data << 1) | (p->C ? 1 : 0);
     processor_store_8(p, address, data);
     __update_CC_data8(p, data);
     p->C = new_c;
@@ -694,54 +767,14 @@ void __opcode_rol_reg(struct processor_state *p, uint8_t *reg) {
     int bit6 = data & 0x40 ? 1 : 0;
     int bit7 = data & 0x80 ? 1 : 0;
     p->V = bit6 ^ bit7;
-    *reg = (data << 1) | p->C;
+    *reg = (data << 1) | (p->C ? 1 : 0);
     __update_CC_data8(p, *reg);
     p->C = new_c;
-}
-
-void __opcode_asl(struct processor_state *p, uint16_t address) {
-    uint8_t data = processor_load_8(p, address);
-    int new_c = data & 0x80 ? 1 : 0;
-    int bit6 = data & 0x40 ? 1 : 0;
-    int bit7 = data & 0x80 ? 1 : 0;
-    p->V = bit6 ^ bit7;
-    data = data << 1;
-    processor_store_8(p, address, data);
-    __update_CC_data8(p, data);
-    p->C = new_c;
-}
-
-void __opcode_asl_reg(struct processor_state *p, uint8_t *reg) {
-    uint8_t data = *reg;
-    int new_c = data & 0x80 ? 1 : 0;
-    int bit6 = data & 0x40 ? 1 : 0;
-    int bit7 = data & 0x80 ? 1 : 0;
-    p->V = bit6 ^ bit7;
-    *reg = data << 1;
-    __update_CC_data8(p, *reg);
-    p->C = new_c;
-}
-
-void __opcode_asr(struct processor_state *p, uint16_t address) {
-    uint8_t data = processor_load_8(p, address);
-    int bit7 = data & 0x80;
-    p->C = data & 1;
-    data = (data >> 1) | bit7;
-    processor_store_8(p, address, data);
-    __update_CC_data8(p, data);
-}
-
-void __opcode_asr_reg(struct processor_state *p, uint8_t *reg) {
-    uint8_t data = *reg;
-    int bit7 = data & 0x80;
-    p->C = data & 1;
-    *reg = (data >> 1) | bit7;
-    __update_CC_data8(p, *reg);
 }
 
 void __opcode_ror(struct processor_state *p, uint16_t address) {
     uint8_t data = processor_load_8(p, address);
-    int bit7 = 0x80 ? p->C : 0;
+    int bit7 = 0x80 ? (p->C ? 1 : 0) : 0;
     p->C = data & 1;
     data = (data >> 1) | bit7;
     processor_store_8(p, address, data);
@@ -750,15 +783,10 @@ void __opcode_ror(struct processor_state *p, uint16_t address) {
 
 void __opcode_ror_reg(struct processor_state *p, uint8_t *reg) {
     uint8_t data = *reg;
-    int bit7 = 0x80 ? p->C : 0;
+    int bit7 = 0x80 ? (p->C ? 1 : 0) : 0;
     p->C = data & 1;
     *reg = (data >> 1) | bit7;
     __update_CC_data8(p, *reg);
-}
-
-void __opcode_andcc(struct processor_state *p, uint16_t address) {
-    uint8_t data = processor_load_8(p, address);
-    p->CC = p->CC & data;
 }
 
 void __opcode_tst(struct processor_state *p, uint16_t address) {
@@ -871,7 +899,7 @@ void __opcode_puls(struct processor_state *p, uint16_t address) {
     }
     if (data & 0b10000000) {
         p->PC = processor_load_16(p, p->S);
-        p->S -+ 2;
+        p->S += 2;
     }
 }
 
@@ -1261,6 +1289,9 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         case 0x81:
             __opcode_sub8(p, __get_address_immediate8(p), &p->A, 1);
             break;
+        case 0x82:
+            __opcode_sbc(p, __get_address_immediate8(p), &p->A);
+            break;
         case 0x83:
             __opcode_sub16(p, __get_address_immediate16(p), &p->D, 0);
             break;
@@ -1277,7 +1308,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
             __opcode_eor(p, __get_address_immediate8(p), &p->A);
             break;
         case 0x89:
-            __opcode_adca(p, __get_address_immediate8(p));
+            __opcode_adc(p, __get_address_immediate8(p), &p->A);
             break;
         case 0x8A:
             __opcode_or(p, __get_address_immediate8(p), &p->A);
@@ -1300,6 +1331,9 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         case 0x91:
             __opcode_sub8(p, __get_address_direct(p), &p->A, 1);
             break;
+        case 0x92:
+            __opcode_sbc(p, __get_address_direct(p), &p->A);
+            break;
         case 0x93:
             __opcode_sub16(p, __get_address_direct(p), &p->D, 0);
             break;
@@ -1319,7 +1353,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
             __opcode_eor(p, __get_address_direct(p), &p->A);
             break;
         case 0x99:
-            __opcode_adca(p, __get_address_direct(p));
+            __opcode_adc(p, __get_address_direct(p), &p->A);
             break;
         case 0x9A:
             __opcode_or(p, __get_address_direct(p), &p->A);
@@ -1345,6 +1379,9 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         case 0xA1:
             __opcode_sub8(p, __get_address_indexed(p), &p->A, 1);
             break;
+        case 0xA2:
+            __opcode_sbc(p, __get_address_indexed(p), &p->A);
+            break;
         case 0xA3:
             __opcode_sub16(p, __get_address_indexed(p), &p->D, 0);
             break;
@@ -1364,7 +1401,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
             __opcode_eor(p, __get_address_indexed(p), &p->A);
             break;
         case 0xA9:
-            __opcode_adca(p, __get_address_indexed(p));
+            __opcode_adc(p, __get_address_indexed(p), &p->A);
             break;
         case 0xAA:
             __opcode_or(p, __get_address_indexed(p), &p->A);
@@ -1390,6 +1427,9 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         case 0xB1:
             __opcode_sub8(p, __get_address_extended(p), &p->A, 1);
             break;
+        case 0xB2:
+            __opcode_sbc(p, __get_address_extended(p), &p->A);
+            break;
         case 0xB3:
             __opcode_sub16(p, __get_address_extended(p), &p->D, 0);
             break;
@@ -1409,7 +1449,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
             __opcode_eor(p, __get_address_extended(p), &p->A);
             break;
         case 0xB9:
-            __opcode_adca(p, __get_address_extended(p));
+            __opcode_adc(p, __get_address_extended(p), &p->A);
             break;
         case 0xBA:
             __opcode_or(p, __get_address_extended(p), &p->A);
@@ -1435,6 +1475,9 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         case 0xC1:
             __opcode_sub8(p, __get_address_immediate8(p), &p->B, 1);
             break;
+        case 0xC2:
+            __opcode_sbc(p, __get_address_immediate8(p), &p->B);
+            break;
         case 0xC3:
             __opcode_add16(p, __get_address_immediate16(p), &p->D);
             break;
@@ -1451,7 +1494,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
             __opcode_eor(p, __get_address_immediate8(p), &p->B);
             break;
         case 0xC9:
-            __opcode_adcb(p, __get_address_immediate8(p));
+            __opcode_adc(p, __get_address_immediate8(p), &p->B);
             break;
         case 0xCA:
             __opcode_or(p, __get_address_immediate8(p), &p->B);
@@ -1470,6 +1513,9 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
             break;
         case 0xD1:
             __opcode_sub8(p, __get_address_direct(p), &p->B, 1);
+            break;
+        case 0xD2:
+            __opcode_sbc(p, __get_address_direct(p), &p->B);
             break;
         case 0xD3:
             __opcode_add16(p, __get_address_direct(p), &p->D);
@@ -1490,7 +1536,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
             __opcode_eor(p, __get_address_direct(p), &p->B);
             break;
         case 0xD9:
-            __opcode_adcb(p, __get_address_direct(p));
+            __opcode_adc(p, __get_address_direct(p), &p->B);
             break;
         case 0xDA:
             __opcode_or(p, __get_address_direct(p), &p->B);
@@ -1516,6 +1562,9 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         case 0xE1:
             __opcode_sub8(p, __get_address_indexed(p), &p->B, 1);
             break;
+        case 0xE2:
+            __opcode_sbc(p, __get_address_indexed(p), &p->B);
+            break;
         case 0xE3:
             __opcode_add16(p, __get_address_indexed(p), &p->D);
             break;
@@ -1535,7 +1584,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
             __opcode_eor(p, __get_address_indexed(p), &p->B);
             break;
         case 0xE9:
-            __opcode_adcb(p, __get_address_indexed(p));
+            __opcode_adc(p, __get_address_indexed(p), &p->B);
             break;
         case 0xEA:
             __opcode_or(p, __get_address_indexed(p), &p->B);
@@ -1561,6 +1610,9 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         case 0xF1:
             __opcode_sub8(p, __get_address_extended(p), &p->B, 1);
             break;
+        case 0xF2:
+            __opcode_sbc(p, __get_address_extended(p), &p->B);
+            break;
         case 0xF3:
             __opcode_add16(p, __get_address_extended(p), &p->D);
             break;
@@ -1580,7 +1632,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
             __opcode_eor(p, __get_address_extended(p), &p->B);
             break;
         case 0xF9:
-            __opcode_adcb(p, __get_address_extended(p));
+            __opcode_adc(p, __get_address_extended(p), &p->B);
             break;
         case 0xFA:
             __opcode_or(p, __get_address_extended(p), &p->B);
@@ -1809,15 +1861,24 @@ void processor_next_opcode(struct processor_state *p) {
         opcode = processor_load_8(p, p->PC++);
         if (!(opcode == 0x10 || opcode == 0x11)) opcode = opcode_high + opcode;
     }
-    if (org_address == 0xA30A){
-        // printf("Executing %04X opcode %04X\n", org_address, opcode);
-        execute_opcode(p, opcode);
-        // processor_dump(p);
-    } else {
-        // printf("Executing %04X opcode %04X\n", org_address, opcode);
-        execute_opcode(p, opcode);
-        // processor_dump(p);
+
+    // printf("Executing %04X opcode %04X\n", org_address, opcode);
+    execute_opcode(p, opcode);
+    // processor_dump(p);
+
+    // if (org_address == 0xB99C) {
+    //     printf("Printing: ");
+    //     for (int i=1; i<p->A; i++){
+    //         uint8_t ch = processor_load_8(p, p->X+i);
+    //         printf("%c", ch);
+    //         if (ch ==0) break;
+    //     }
+    //     processor_dump(p);
+    // }
+    if (p->S > 0x400 && p->S < 0x600) {
+        exit(0);
     }
+
 }
 
 uint8_t _bus_memory_read(struct bus_adaptor *p, uint16_t addr) {
@@ -1906,14 +1967,9 @@ int _main(void) {
     struct processor_state p;
     processor_init(&p);
 
-    uint8_t rom_data[] = {0x8E, 0x01, 0x07, 0xc6, 0xfe, 0xA6, 0x85, 0x10, 0x20};
-    struct bus_adaptor *rom = bus_create_rom(rom_data, sizeof(rom_data), 0x100);
-    processor_register_bus_adaptor(&p, rom);
-
-    p.PC = 0x100;
-    processor_next_opcode(&p);
-    processor_next_opcode(&p);
-    processor_next_opcode(&p);
+    p.A = 0x12;
+    p.B = 0xFA;
+    p.CC = 0b00100001;
 
     processor_dump(&p);
     return 0;
