@@ -42,4 +42,6 @@ struct processor_state {
         struct bus_adaptor **adaptors;
         int count;
     }bus;
+
+    uint64_t _nano_time_passed;
 };
