@@ -24,14 +24,14 @@ struct processor_state {
     uint8_t DP;
     union {
         struct {
-            int C:1;
-            int V:1;
-            int Z:1;
-            int N:1;
-            int I:1;
-            int H:1;
-            int F:1;
-            int E:1;
+            unsigned C:1;
+            unsigned V:1;
+            unsigned Z:1;
+            unsigned N:1;
+            unsigned I:1;
+            unsigned H:1;
+            unsigned F:1;
+            unsigned E:1;
         };
         uint8_t CC;
     };
