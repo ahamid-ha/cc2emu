@@ -3,72 +3,9 @@
 #include <string.h>
 #include "processor_6809.h"
 
-#define cycle_nano 1000
 #define add_cycles(t) p->_nano_time_passed += t * cycle_nano
-
-// ntsc 23.976 frame / second
-#define frame_time_nano 41708375
-
-uint8_t processor_load_8(struct processor_state *p, uint16_t addr) {
-    if (addr >= 0xFFF2) {
-        // map the vectors to the rom
-        addr -= 0xFFF2 - 0xBFF2;
-    }
-    // printf("processor_load_8 %04X\n", addr);
-    for (int i=0; i < p->bus.count; i++) {
-        struct bus_adaptor *adaptor = p->bus.adaptors[i];
-        // printf(" checking adaptor start=%04X end=%04X\n", adaptor->start, adaptor->end);
-        if (addr >= adaptor->start && addr <= adaptor->end) {
-            if (adaptor->load_8) {
-                // printf("  Found adaptor for address %04X\n", addr);
-                return adaptor->load_8(adaptor, addr - adaptor->start);
-            }
-        }
-    }
-    return 0;
-}
-
-char display_chars[] = "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]  "
-    " !\"#$%&'()*+,-./0123456789:;<=>?";
-void display_text(struct processor_state *p) {
-    int in_exit=0;
-    for (int line=0; line < 16; line++) {
-        for (int col=0; col < 32; col++) {
-            uint8_t data = processor_load_8(p, 1024 + (line * 32) + col);
-            if (1024 + (line * 32) + col == 1024 && data == 0xc6) in_exit += 1;
-            if (1024 + (line * 32) + col == 1024 +1 && data == 0x4f) in_exit += 1;
-            if (1024 + (line * 32) + col == 1024 +2 && data == 0xc1) in_exit += 1;
-            if (1024 + (line * 32) + col == 1024 + 32 && data == 0xc6 && in_exit == 3) exit(0);
-
-            uint8_t display_char = display_chars[data & 63];
-            if (data >= 128) display_char = 32;
-            // printf("%02x%c ", data, display_char);
-            putc(display_char, stdout);
-        }
-        putc('\n', stdout);
-    }
-    putc('\n', stdout);
-}
-
-void processor_store_8(struct processor_state *p, uint16_t addr, uint8_t value) {
-    for (int i=0; i < p->bus.count; i++) {
-        struct bus_adaptor *adaptor = p->bus.adaptors[i];
-        if (addr >= adaptor->start && addr <= adaptor->end) {
-            if (adaptor->store_8) {
-                // printf(" Store %04X:%02X\n", addr, value);
-                adaptor->store_8(adaptor, addr - adaptor->start, value);
-            }
-        }
-    }
-
-    // if (addr >= 0x400 && addr < 0x600 && value != 0 && value != 0x60) display_text(p);
-}
-
-void processor_register_bus_adaptor(struct processor_state *p, struct bus_adaptor *adaptor) {
-    p->bus.adaptors = realloc(p->bus.adaptors, sizeof(struct bus_adaptor *) * (p->bus.count + 1));
-    p->bus.adaptors[p->bus.count] = adaptor;
-    p->bus.count++;
-}
+#define processor_load_8(p, addr) bus_read_8(&p->bus, addr)
+#define processor_store_8(p, addr, value) bus_write_8(&p->bus, addr, value)
 
 uint16_t processor_load_16(struct processor_state *p, uint16_t addr) {
     uint16_t msb = (uint16_t)processor_load_8(p, addr);
@@ -571,7 +508,7 @@ void __opcode_sty(struct processor_state *p, uint16_t address) {
 
 void __opcode_dec(struct processor_state *p, uint16_t address) {
     uint8_t data = processor_load_8(p, address);
-    p->V = 1 ? data == 0x80 : 0;
+    p->V = data == 0x80 ? 1 : 0;
     data--;
     processor_store_8(p, address, data);
     __update_CC_data8(p, data);
@@ -753,10 +690,10 @@ void __opcode_daa(struct processor_state *p) {
     uint8_t h = p->A >> 4;
     uint8_t l = p->A & 0xf;
 
-    h = (h + 6) & 0xf ? p->C != 0 || h > 9 || ( h > 8 && l > 9) : h;
-    l = (l + 6) & 0xf ? p->H != 0 || l > 9 : l;
+    h = p->C != 0 || h > 9 || ( h > 8 && l > 9) ? (h + 6) & 0xf : h;
+    l = p->H != 0 || l > 9 ? (l + 6) & 0xf : l;
 
-    p->C = 1 ? p->C != 0 || h > 9 || ( h > 8 && l > 9) : 0;
+    p->C = p->C != 0 || h > 9 || ( h > 8 && l > 9) ? 1 : 0;
 
     p->A = (h << 4) | l;
     __update_CC_data8(p, p->A);
@@ -797,7 +734,7 @@ void __opcode_rol_reg(struct processor_state *p, uint8_t *reg) {
 
 void __opcode_ror(struct processor_state *p, uint16_t address) {
     uint8_t data = processor_load_8(p, address);
-    int bit7 = 0x80 ? (p->C ? 1 : 0) : 0;
+    int bit7 = p->C ? 0x80 : 0;
     p->C = data & 1;
     data = (data >> 1) | bit7;
     processor_store_8(p, address, data);
@@ -806,7 +743,7 @@ void __opcode_ror(struct processor_state *p, uint16_t address) {
 
 void __opcode_ror_reg(struct processor_state *p, uint8_t *reg) {
     uint8_t data = *reg;
-    int bit7 = 0x80 ? (p->C ? 1 : 0) : 0;
+    int bit7 = p->C ? 0x80 : 0;
     p->C = data & 1;
     *reg = (data >> 1) | bit7;
     __update_CC_data8(p, *reg);
@@ -1073,7 +1010,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         op_code(0x48, 'ASLA', 2, __opcode_asl_reg, &p->A)
         op_code(0x49, 'ROLA', 2, __opcode_rol_reg, &p->A)
         case 0x4A:  // DECA
-            p->V = 1 ? p->A == 0x80 : 0;
+            p->V = p->A == 0x80 ? 1 : 0;
             p->A--;
             __update_CC_data8(p, p->A);
             break;
@@ -1109,7 +1046,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
             __opcode_rol_reg(p, &p->B);
             break;
         case 0x5A:  // DECA
-            p->V = 1 ? p->B == 0x80 : 0;
+            p->V = p->B == 0x80 ? 1 : 0;
             p->B--;
             __update_CC_data8(p, p->B);
             break;
@@ -1358,283 +1295,8 @@ void processor_next_opcode(struct processor_state *p) {
     execute_opcode(p, opcode);
     // processor_dump(p);
 
-    // if (org_address == 0xB99C) {
-    //     printf("Printing: ");
-    //     for (int i=1; i<p->A; i++){
-    //         uint8_t ch = processor_load_8(p, p->X+i);
-    //         printf("%c", ch);
-    //         if (ch ==0) break;
-    //     }
-    //     processor_dump(p);
+    // if (org_address == 0xA765) {
+    //     exit(0);
     // }
-    if (p->S > 0x400 && p->S < 0x600) {
-        exit(0);
-    }
 
-}
-
-uint8_t _bus_memory_read(struct bus_adaptor *p, uint16_t addr) {
-    uint8_t *data = (uint8_t *)p->data;
-    return data[addr];
-}
-
-void _bus_memory_write(struct bus_adaptor *p, uint16_t addr, uint8_t value) {
-    uint8_t *data = (uint8_t *)p->data;
-    data[addr] = value;
-}
-
-struct bus_adaptor * bus_create_rom(uint8_t *data, uint16_t size, uint16_t start) {
-    struct bus_adaptor *adaptor = malloc(sizeof(struct bus_adaptor));
-
-    adaptor->start = start;
-    adaptor->end = start + size -1;
-    adaptor->data = data;
-    adaptor->load_8 = _bus_memory_read;
-    adaptor->store_8 = NULL;
-
-    printf("Created rom start=%04X end=%04X\n", adaptor->start, adaptor->end);
-
-    return adaptor;
-}
-
-struct bus_adaptor * bus_create_ram(uint16_t size, uint16_t start) {
-    struct bus_adaptor *adaptor = malloc(sizeof(struct bus_adaptor));
-    void *data = malloc(size);
-
-    adaptor->start = start;
-    adaptor->end = start + size -1;
-    adaptor->data = data;
-    adaptor->load_8 = _bus_memory_read;
-    adaptor->store_8 = _bus_memory_write;
-
-    printf("Created ram start=%04X end=%04X\n", adaptor->start, adaptor->end);
-
-    return adaptor;
-}
-
-void load_trs80(void) {
-    uint8_t *basic_rom = malloc(16 * 1024);
-    FILE *fp = fopen("roms/BASIC.ROM", "rb");
-    if (!fp) {
-        perror("error reading basic rom");
-        exit(1);
-    }
-    size_t remaining = 8 * 1024;
-    uint16_t pos = 0;
-    while (remaining > 0) {
-        size_t ret = fread(basic_rom + pos, 1, 1024, fp);
-        if (ret <=0) {
-            fprintf(stderr, "fread() failed: %zu\n", ret);
-            exit(EXIT_FAILURE);
-        }
-        remaining -= ret;
-        pos += ret;
-    }
-    fclose(fp);
-
-    struct processor_state p;
-    processor_init(&p);
-
-    struct bus_adaptor *rom = bus_create_rom(basic_rom, 8 * 1024, 0xA000);
-    processor_register_bus_adaptor(&p, rom);
-
-    struct bus_adaptor *ram = bus_create_ram(16 * 1024, 0x0000);
-    processor_register_bus_adaptor(&p, ram);
-
-    processor_reset(&p);
-
-    while (1) {
-        // processor_dump(&p);
-        processor_next_opcode(&p);
-    }
-
-    processor_dump(&p);
-}
-
-int _main(void) {
-    load_trs80();
-}
-
-int _main2(void) {
-    struct processor_state p;
-    processor_init(&p);
-
-    p.A = 0x12;
-    p.B = 0xFA;
-    p.CC = 0b00100001;
-
-    processor_dump(&p);
-    return 0;
-}
-
-#include <SDL2/SDL.h>
-#include <SDL_ttf.h>
-#include <stdbool.h>
-#include <time.h>
-
-#define SEC_TO_NS(sec) ((sec)*1000000000)
-uint64_t nanos()
-{
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
-    uint64_t ns = SEC_TO_NS((uint64_t)ts.tv_sec) + (uint64_t)ts.tv_nsec;
-    return ns;
-}
-
-TTF_Font* font;
-
-char _display_chars[] = "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]  "
-    " !\"#$%&'()*+,-./0123456789:;<=>?";
-void render_text(struct processor_state *p, SDL_Renderer* renderer) {
-    char text_line[33];
-    SDL_Color foreground = { 255, 255, 255 };
-    SDL_Rect dest;
-
-    for (int line=0; line < 16; line++) {
-        for (int col=0; col < 32; col++) {
-            uint8_t data = processor_load_8(p, 1024 + (line * 32) + col);
-
-            uint8_t display_char = display_chars[data & 63];
-            if (data >= 128) display_char = 32;
-            // printf("%02x%c ", data, display_char);
-            // putc(display_char, stdout);
-            text_line[col] = display_char;
-        }
-        text_line[33] = 0;
-
-        SDL_Surface* text_surf = TTF_RenderText_Solid(font, text_line, foreground);
-		SDL_Texture *text = SDL_CreateTextureFromSurface(renderer, text_surf);
-
-		dest.x = 20;
-		dest.y = 20 * line;
-		dest.w = text_surf->w;
-		dest.h = text_surf->h;
-		SDL_RenderCopy(renderer, text, NULL, &dest);
-
-		SDL_DestroyTexture(text);
-		SDL_FreeSurface(text_surf);
-    }
-}
-
-int main(int argc, char* argv[]) {
-    // Initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        printf("Error initializing SDL: %s\n", SDL_GetError());
-        return -1;
-    }
-
-    if ( TTF_Init() < 0 ) {
-		printf("Error initializing TTF %s\n", TTF_GetError());
-        SDL_Quit();
-		return -1;
-	}
-
-    // Create a window and renderer
-    SDL_Window* window = SDL_CreateWindow("Simple Graphics", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480, SDL_WINDOW_SHOWN);
-    if (!window) {
-        printf("Failed to create window: %s\n", SDL_GetError());
-        SDL_Quit();
-        return -1;
-    }
-
-    // Renderer for drawing graphics
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, 0);
-    if (!renderer) {
-        printf("Failed to create renderer: %s\n", SDL_GetError());
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return -1;
-    }
-
-    font = TTF_OpenFont("/usr/share/fonts/TTF/NotoMonoNerdFont-Regular.ttf", 20);
-	if ( !font ) {
-		printf("Error creating font %s\n", TTF_GetError());
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-		return -1;
-	}
-
-    bool running = true;
-
-    uint8_t *basic_rom = malloc(16 * 1024);
-    FILE *fp = fopen("roms/BASIC.ROM", "rb");
-    if (!fp) {
-        perror("error reading basic rom");
-        exit(1);
-    }
-    size_t remaining = 8 * 1024;
-    uint16_t pos = 0;
-    while (remaining > 0) {
-        size_t ret = fread(basic_rom + pos, 1, 1024, fp);
-        if (ret <=0) {
-            fprintf(stderr, "fread() failed: %zu\n", ret);
-            exit(EXIT_FAILURE);
-        }
-        remaining -= ret;
-        pos += ret;
-    }
-    fclose(fp);
-
-    struct processor_state p;
-    processor_init(&p);
-
-    struct bus_adaptor *rom = bus_create_rom(basic_rom, 8 * 1024, 0xA000);
-    processor_register_bus_adaptor(&p, rom);
-
-    struct bus_adaptor *ram = bus_create_ram(16 * 1024, 0x0000);
-    processor_register_bus_adaptor(&p, ram);
-
-    processor_reset(&p);
-
-    while (running) {
-        // Handle events
-        SDL_Event event;
-
-        uint64_t next_frame_ns = nanos() + frame_time_nano;
-
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT || (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_q)) {
-                running = false;
-            }
-        }
-
-        p._nano_time_passed = 0;
-        while (p._nano_time_passed < frame_time_nano) {
-            processor_next_opcode(&p);
-        }
-
-        // Clear the renderer with a black color
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-        SDL_RenderClear(renderer);
-
-        // Draw something (in this case, white lines)
-        // for (int i = 10; i < 630; i += 20) {
-        //     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        //     SDL_RenderDrawLine(renderer, i, 0, i, 480);
-        // }
-
-        render_text(&p, renderer);
-
-        // Update the renderer
-        SDL_RenderPresent(renderer);
-
-        // Cap at 60 FPS to avoid excessive CPU usage
-        SDL_Delay(1000 / 60);
-
-        uint64_t time_ns = nanos();
-        if (next_frame_ns > time_ns) {
-            struct timespec res;
-            res.tv_sec = 0;
-            res.tv_nsec = next_frame_ns - time_ns;
-
-            clock_nanosleep(CLOCK_MONOTONIC, 0, &res, NULL);
-        }
-    }
-
-    // Clean up resources before exiting
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
-    SDL_Quit();
-
-    return 0;
 }

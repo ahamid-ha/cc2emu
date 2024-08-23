@@ -1,13 +1,11 @@
 #include <inttypes.h>
+#include <bus.h>
 
 
-struct bus_adaptor {
-    uint16_t start;
-    uint16_t end;
-    void *data;
-    uint8_t (*load_8)(struct bus_adaptor *p, uint16_t addr);
-    void (*store_8)(struct bus_adaptor *p, uint16_t addr, uint8_t value);
-};
+#define cycle_nano 1000
+
+// ntsc 23.976 frame / second
+#define frame_time_nano 41708375
 
 struct processor_state {
     union {
@@ -38,10 +36,11 @@ struct processor_state {
         uint8_t CC;
     };
 
-    struct {
-        struct bus_adaptor **adaptors;
-        int count;
-    }bus;
+    struct bus_register bus;
 
     uint64_t _nano_time_passed;
 };
+
+void processor_init(struct processor_state *p);
+void processor_reset(struct processor_state *p);
+void processor_next_opcode(struct processor_state *p);
