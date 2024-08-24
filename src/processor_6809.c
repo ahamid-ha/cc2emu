@@ -42,9 +42,9 @@ void processor_dump(struct processor_state *p) {
 
 uint16_t __get_address_direct(struct processor_state *p) {
     uint16_t addr_high = p->DP;
-    uint16_t addr_low = processor_load_8(p, p->PC++);
+    uint8_t addr_low = processor_load_8(p, p->PC++);
 
-    return addr_high << 8 | addr_low;
+    return (addr_high << 8) | addr_low;
 }
 
 uint16_t __get_address_extended(struct processor_state *p) {
@@ -605,7 +605,7 @@ void __opcode_sub8(struct processor_state *p, uint16_t address, uint8_t *reg, in
 
     result = (*reg) - data;
 
-    p->C = result > 0xff;
+    p->C = result > 0xff ? 1 : 0;
     p->V = (((*reg ^ result) & 0x80) && ((*reg ^ data) & 0x80)) ? 1 :0;
     __update_CC_data8(p, result);
 
@@ -618,7 +618,7 @@ void __opcode_sub16(struct processor_state *p, uint16_t address, uint16_t *reg, 
 
     result = (*reg) - data;
 
-    p->C = result > 0xffff;
+    p->C = result > 0xffff ? 1 : 0;
     p->V = (((*reg ^ result) & 0x8000) && ((*reg ^ data) & 0x8000)) ? 1 :0;
     __update_CC_data16(p, result);
 
@@ -631,7 +631,7 @@ void __opcode_sbc(struct processor_state *p, uint16_t address, uint8_t *reg) {
 
     result = (*reg) - data - (p->C ? 1 : 0);
 
-    p->C = result > 0xff;
+    p->C = result > 0xff ? 1 : 0;
     p->V = (((*reg ^ result) & 0x80) && ((*reg ^ data) & 0x80)) ? 1 :0;
     __update_CC_data8(p, result);
     *reg = result & 0xff;
@@ -1285,6 +1285,10 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
 }
 
 void processor_next_opcode(struct processor_state *p) {
+    if (p->_stopped) {
+        add_cycles(1);
+        return;
+    }
     uint16_t org_address = p->PC;
     uint16_t opcode = processor_load_8(p, p->PC++);
 
@@ -1300,6 +1304,18 @@ void processor_next_opcode(struct processor_state *p) {
 
     // if (org_address == 0xA765) {
     //     exit(0);
+    // }
+
+    // if (org_address == 0xB99C) {
+    //     printf("Printing: {");
+    //     for (int i=1; ; i++){
+    //         uint8_t ch = processor_load_8(p, p->X+i);
+    //         if (ch == 0xd) ch = '\n';
+    //         printf("%c", ch);
+    //         if (ch ==0 || ch == '"') break;
+    //     }
+    //     printf("}");
+    //     processor_dump(p);
     // }
 
 }

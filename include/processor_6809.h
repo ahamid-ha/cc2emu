@@ -39,6 +39,7 @@ struct processor_state {
     struct bus_register bus;
 
     uint64_t _nano_time_passed;
+    int _stopped;
 };
 
 void processor_init(struct processor_state *p);

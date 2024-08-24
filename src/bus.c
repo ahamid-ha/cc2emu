@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #include "bus.h"
 
 uint8_t bus_read_8(struct bus_register *b, uint16_t addr) {
@@ -32,8 +33,6 @@ void bus_write_8(struct bus_register *b, uint16_t addr, uint8_t value) {
             }
         }
     }
-
-    // if (addr >= 0x400 && addr < 0x600 && value != 0 && value != 0x60) display_text(p);
 }
 
 void processor_register_bus_adaptor(struct bus_register *b, struct bus_adaptor *adaptor) {
@@ -53,16 +52,36 @@ void _bus_memory_write(struct bus_adaptor *p, uint16_t addr, uint8_t value) {
     data[addr] = value;
 }
 
-struct bus_adaptor * bus_create_rom(uint8_t *data, uint16_t size, uint16_t start) {
+struct bus_adaptor * bus_create_rom(char *path, uint16_t start) {
+    int size = 8 * 1024;
+    uint8_t *rom_contents = malloc(size);
+    FILE *fp = fopen(path, "rb");
+    if (!fp) {
+        fprintf(stderr, "error reading rom from file %s: %s\n", path, strerror(errno));
+        exit(1);
+    }
+    size_t remaining = size;
+    uint16_t pos = 0;
+    while (remaining > 0) {
+        size_t ret = fread(rom_contents + pos, 1, 1024, fp);
+        if (ret <=0) {
+            fprintf(stderr, "fread() failed: %zu\n", ret);
+            exit(EXIT_FAILURE);
+        }
+        remaining -= ret;
+        pos += ret;
+    }
+    fclose(fp);
+
     struct bus_adaptor *adaptor = malloc(sizeof(struct bus_adaptor));
 
     adaptor->start = start;
     adaptor->end = start + size -1;
-    adaptor->data = data;
+    adaptor->data = rom_contents;
     adaptor->load_8 = _bus_memory_read;
     adaptor->store_8 = NULL;
 
-    printf("Created rom start=%04X end=%04X\n", adaptor->start, adaptor->end);
+    printf("Created rom %s start=%04X end=%04X\n", path, adaptor->start, adaptor->end);
 
     return adaptor;
 }
@@ -70,6 +89,7 @@ struct bus_adaptor * bus_create_rom(uint8_t *data, uint16_t size, uint16_t start
 struct bus_adaptor * bus_create_ram(uint16_t size, uint16_t start) {
     struct bus_adaptor *adaptor = malloc(sizeof(struct bus_adaptor));
     void *data = malloc(size);
+    memset(data, 0, size);
 
     adaptor->start = start;
     adaptor->end = start + size -1;

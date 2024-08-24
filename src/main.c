@@ -68,6 +68,13 @@ void render_text(uint8_t *memory, SDL_Renderer* renderer) {
     }
 }
 
+int main2(int argc, char* argv[]) {
+    uint8_t a= 3;
+    uint8_t b= 5;
+    uint16_t num = a - b;
+    printf("value = %d\n", num);
+}
+
 int main(int argc, char* argv[]) {
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
@@ -108,30 +115,14 @@ int main(int argc, char* argv[]) {
 
     bool running = true;
 
-    uint8_t *basic_rom = malloc(16 * 1024);
-    FILE *fp = fopen("roms/BASIC.ROM", "rb");
-    if (!fp) {
-        perror("error reading basic rom");
-        exit(1);
-    }
-    size_t remaining = 8 * 1024;
-    uint16_t pos = 0;
-    while (remaining > 0) {
-        size_t ret = fread(basic_rom + pos, 1, 1024, fp);
-        if (ret <=0) {
-            fprintf(stderr, "fread() failed: %zu\n", ret);
-            exit(EXIT_FAILURE);
-        }
-        remaining -= ret;
-        pos += ret;
-    }
-    fclose(fp);
-
     struct processor_state p;
     processor_init(&p);
 
-    struct bus_adaptor *rom = bus_create_rom(basic_rom, 8 * 1024, 0xA000);
-    processor_register_bus_adaptor(&p.bus, rom);
+    struct bus_adaptor *basic_rom = bus_create_rom("roms/BASIC.ROM", 0xA000);
+    processor_register_bus_adaptor(&p.bus, basic_rom);
+
+    // struct bus_adaptor *extended_rom = bus_create_rom('roms/extbas11.rom', 0x8000);
+    // processor_register_bus_adaptor(&p.bus, extended_rom);
 
     struct bus_adaptor *ram = bus_create_ram(16 * 1024, 0x0000);
     processor_register_bus_adaptor(&p.bus, ram);

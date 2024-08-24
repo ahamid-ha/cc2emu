@@ -23,7 +23,7 @@ uint8_t bus_read_8(struct bus_register *b, uint16_t addr);
 void bus_write_8(struct bus_register *b, uint16_t addr, uint8_t value);
 void processor_register_bus_adaptor(struct bus_register *b, struct bus_adaptor *adaptor);
 
-struct bus_adaptor * bus_create_rom(uint8_t *data, uint16_t size, uint16_t start);
+struct bus_adaptor * bus_create_rom(char *path, uint16_t start);
 struct bus_adaptor * bus_create_ram(uint16_t size, uint16_t start);
 struct bus_adaptor * bus_create_pia1();
 struct bus_adaptor * bus_create_pia2();
