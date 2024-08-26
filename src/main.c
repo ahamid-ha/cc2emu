@@ -6,23 +6,8 @@
 #include <stdbool.h>
 #include <time.h>
 #include "processor_6809.h"
+#include "keyboard.h"
 
-#define kb_map(sym, row, column) case sym: data->keyboard_keys_status[row][column] = is_pressed; break;
-
-void pia1_set_key(struct bus_adaptor *p, int sym, int is_pressed) {
-    struct pia1_status *data = (struct pia1_status *)p->data;
-
-    switch(sym) {
-        kb_map(SDLK_w, 2, 7)
-        kb_map(SDLK_v, 2, 6)
-        kb_map(SDLK_u, 2, 5)
-        kb_map(SDLK_t, 2, 4)
-        kb_map(SDLK_s, 2, 3)
-        kb_map(SDLK_r, 2, 2)
-        kb_map(SDLK_q, 2, 1)
-        kb_map(SDLK_p, 2, 0)
-    }
-}
 
 #define SEC_TO_NS(sec) ((sec)*1000000000)
 uint64_t nanos()
@@ -121,10 +106,10 @@ int main(int argc, char* argv[]) {
     struct bus_adaptor *basic_rom = bus_create_rom("roms/BASIC.ROM", 0xA000);
     processor_register_bus_adaptor(&p.bus, basic_rom);
 
-    // struct bus_adaptor *extended_rom = bus_create_rom('roms/extbas11.rom', 0x8000);
-    // processor_register_bus_adaptor(&p.bus, extended_rom);
+    struct bus_adaptor *extended_rom = bus_create_rom("roms/extbas11.rom", 0x8000);
+    processor_register_bus_adaptor(&p.bus, extended_rom);
 
-    struct bus_adaptor *ram = bus_create_ram(16 * 1024, 0x0000);
+    struct bus_adaptor *ram = bus_create_ram(32 * 1024, 0x0000);
     processor_register_bus_adaptor(&p.bus, ram);
     uint8_t *memory_buffer = (uint8_t *)ram->data;
 
@@ -133,6 +118,8 @@ int main(int argc, char* argv[]) {
 
     struct bus_adaptor *pia2 = bus_create_pia2();
     processor_register_bus_adaptor(&p.bus, pia2);
+
+    struct keyboard_status *keyboard = keyboard_initialize((struct mc6821_status*)pia1->data);
 
     processor_reset(&p);
 
@@ -143,15 +130,15 @@ int main(int argc, char* argv[]) {
         uint64_t next_frame_ns = nanos() + frame_time_nano;
 
         while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT || (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_q)) {
+            if (event.type == SDL_QUIT) {
                 running = false;
             }
 
             if (event.type == SDL_KEYDOWN) {
-                pia1_set_key(pia1, event.key.keysym.sym, 1);
+                keyboard_set_key(keyboard, event.key.keysym.sym, 1);
             }
             if (event.type == SDL_KEYUP) {
-                pia1_set_key(pia1, event.key.keysym.sym, 0);
+                keyboard_set_key(keyboard, event.key.keysym.sym, 0);
             }
         }
 

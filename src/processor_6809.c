@@ -402,11 +402,20 @@ void __opcode_neg(struct processor_state *p, uint16_t address) {
     p->C = data == 0x0 ? 0 : 1;
 }
 
+void __opcode_neg_reg(struct processor_state *p, uint8_t *reg) {
+    uint8_t data = *reg;
+    data = (~data) + 1;
+    *reg = data;
+    __update_CC_data8(p, data);
+    p->V = data == 0x80 ? 1 : 0;
+    p->C = data == 0x0 ? 0 : 1;
+}
+
 void __opcode_inc(struct processor_state *p, uint16_t address) {
     uint8_t data = processor_load_8(p, address);
     p->V = data == 0x7F ? 1 : 0;
     data += 1;
-    processor_store_8(p, address, 0);
+    processor_store_8(p, address, data);
     __update_CC_data8(p, data);
 }
 
@@ -1042,6 +1051,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         op_code(0x39, 'RTS', 5, __opcode_rts)
         op_code(0x3A, 'ABX', 3, __opcode_abx)
 
+        op_code(0x40, 'NEGA', 2, __opcode_neg_reg, &p->A)
         op_code(0x43, 'COMA', 2, __opcode_com_reg, &p->A)
         op_code(0x44, 'LSRA', 2, __opcode_lsr_reg, &p->A)
         op_code(0x46, 'RORA', 2, __opcode_ror_reg, &p->A)
@@ -1053,6 +1063,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         op_code(0x4D, 'TSTA', 2, __opcode_tst_reg, &p->A)
         op_code(0x4F, 'CLRA', 2, __opcode_clr_reg, &p->A)
 
+        op_code(0x50, 'NEGB', 2, __opcode_neg_reg, &p->B)
         op_code(0x53, 'COMB', 2, __opcode_com_reg, &p->B)
         op_code(0x54, 'LSRB', 2, __opcode_lsr_reg, &p->B)
         op_code(0x56, 'RORB', 2, __opcode_ror_reg, &p->B)
@@ -1298,9 +1309,16 @@ void processor_next_opcode(struct processor_state *p) {
         if (!(opcode == 0x10 || opcode == 0x11)) opcode = opcode_high + opcode;
     }
 
-    // printf("Executing %04X opcode %04X\n", org_address, opcode);
+    // if (org_address >= 0xA1C1 && org_address <= 0xA1F9)
+    //     printf("Execuding %04X opcode %04X\n", org_address, opcode);
+    // printf("Execuding %04X opcode %04X\n", org_address, opcode);
     execute_opcode(p, opcode);
     // processor_dump(p);
+    // if (org_address >= 0xA1C1 && org_address <= 0xA1F9) {
+    //     processor_dump(p);
+    //     if (org_address == 0xA1F9)
+    //         exit(0);
+    // }
 
     // if (org_address == 0xA765) {
     //     exit(0);

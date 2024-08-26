@@ -5,103 +5,89 @@
 #include <string.h>
 
 
-uint8_t mc6821_peripheral_read(struct mc6821_peripheral_status *p, int address) {
+#define peripheral(peripheral_address) (peripheral_address == 0 ? &p->a : &p->b)
+
+uint8_t mc6821_peripheral_read_register(struct mc6821_peripheral_status *p, int address) {
     if (address) {
-        printf(" cr\n");
         return p->cr;
     }
     if (p->ddr_access) {
-        printf(" pr\n");
         p->irq1 = 0;
         p->irq2 = 0;
         return p->pr;
     }
-    printf(" ddr\n");
+
     return p->ddr;
 }
 
-uint8_t mc6821_read(struct mc6821_status *p, int address) {
-    printf(" %d ", p->name);
-    if ((address & 0b10) == 0) {
-        printf("mc6821_read a");
-        return mc6821_peripheral_read(&p->a, address & 1);
-    }
-    printf("mc6821_read b");
-    return mc6821_peripheral_read(&p->b, address & 1);
+uint8_t mc6821_read_register(struct mc6821_status *p, int address) {
+    int peripheral_address = (address & 0b10 ) >> 1;
+    struct mc6821_peripheral_status *ps = peripheral(peripheral_address);
+
+    return mc6821_peripheral_read_register(ps, address & 1);
 }
 
-void mc6821_peripheral_write(struct mc6821_peripheral_status *p, int address, uint8_t value) {
+void mc6821_peripheral_write_register(struct mc6821_peripheral_status *ps, uint16_t address, uint8_t value) {
     if (address) {
-        printf(" cr\n");
-        p->cr = value;
-    } else if (p->ddr_access) {
-        printf(" pr\n");
-        p->pr = value;
+        ps->cr = value;
+    }
+    else if (ps->ddr_access) {
+        value = value & ps->ddr;
+        ps->pr = ps->pr & (~ps->ddr);
+        ps->pr = ps->pr | value;
     }
     else {
-        printf(" ddr\n");
-        p->ddr = value;
+        ps->ddr = value;
     }
 }
 
-void mc6821_write(struct mc6821_status *p, int address, uint8_t value) {
-    printf(" %d ", p->name);
-    if ((address & 0b10 )== 0) {
-        printf("mc6821_write a");
-        return mc6821_peripheral_write(&p->a, address & 1, value);
-    } else {
-        printf("mc6821_write b");
-        mc6821_peripheral_write(&p->b, address & 1, value);
-    }
-}
+void mc6821_write_register(struct mc6821_status *p, uint16_t address, uint8_t value) {
+    int peripheral_address = (address & 0b10 ) >> 1;
+    struct mc6821_peripheral_status *ps = peripheral(peripheral_address);
+    uint8_t old_output_value = ps->ddr & ps->pr;
 
+    mc6821_peripheral_write_register(ps, address & 1, value);
 
-uint8_t _bus_pia1_read(struct bus_adaptor *p, uint16_t addr) {
-    struct pia1_status *data = (struct pia1_status *)p->data;
-    printf("pia 1 read %04X\n", addr);
-    switch(addr) {
-        case 0:
-            {
-                uint8_t value = 0x00;
-                for (int row=0; row < 7; row++) {
-                    for (int col=0; col < 8; col++) {
-                        if (data->keyboard_keys_status[row][col]) {
-                            value |= 1 << row;
-                        }
-                    }
-                }
-
-                printf(" pia 1 return %02X\n", ~value);
-                return ~value;
+    if ((ps->ddr & ps->pr) != old_output_value) {
+        uint8_t output_value = ps->ddr & ps->pr;
+        // find a registered cb and call it
+        for (int cb_pos=0; cb_pos < MC6821_MAX_CB_COUNT && p->output_change_cb[cb_pos].cb; cb_pos++){
+            if (peripheral_address == p->output_change_cb[cb_pos].peripheral_address) {
+                p->output_change_cb[cb_pos].cb(p, peripheral_address, output_value, p->output_change_cb[cb_pos].data);
             }
-            break;
-        default:
-            printf("Unhandled pia 1 read %04X\n", addr);
+        }
     }
-
-    return 0x00;
 }
 
-void _bus_pia1_write(struct bus_adaptor *p, uint16_t addr, uint8_t value) {
-    printf(" pia 1 write %04X:%02X\n", addr, value);
-    struct pia1_status *data = (struct pia1_status *)p->data;
-    switch(addr) {
-        case 2:
-            data->pb = value;
-            break;
-        default:
-            printf("Unhandled pia 1 write %04X:%02X\n", addr, value);
+void mc6821_peripheral_input(struct mc6821_status *p, int peripheral_address, uint8_t value, uint8_t mask) {
+    struct mc6821_peripheral_status *ps = peripheral(peripheral_address);
+    mask = (~ps->ddr) & mask;
+    value = value & mask;
+    ps->pr = ps->pr & (~mask);
+    ps->pr = ps->pr | value;
+}
+
+int mc6821_register_cb(struct mc6821_status *p, int peripheral_address, mc6821_cb cb, void *data) {
+    for (int cb_pos=0; cb_pos < MC6821_MAX_CB_COUNT; cb_pos++){
+        if (!p->output_change_cb[cb_pos].cb) {
+            p->output_change_cb[cb_pos].cb = cb;
+            p->output_change_cb[cb_pos].peripheral_address = peripheral_address;
+            p->output_change_cb[cb_pos].data = data;
+        }
+        return 0;
     }
+
+    return 1;
 }
 
 uint8_t _bus_pia_read(struct bus_adaptor *p, uint16_t addr) {
     struct mc6821_status *data = (struct mc6821_status *)p->data;
-    return mc6821_read(data, addr);
+    return mc6821_read_register(data, addr);
 }
 
 void _bus_pia_write(struct bus_adaptor *p, uint16_t addr, uint8_t value) {
     struct mc6821_status *data = (struct mc6821_status *)p->data;
-    mc6821_write(data, addr, value);
+    mc6821_write_register(data, addr, value);
 }
 
 struct bus_adaptor * bus_create_pia1() {
@@ -112,7 +98,7 @@ struct bus_adaptor * bus_create_pia1() {
     data->name = 1;
 
     adaptor->start = 0xFF00;
-    adaptor->end = 0xFF03;
+    adaptor->end = 0xFF1F;
     adaptor->data = data;
     adaptor->load_8 = _bus_pia_read;
     adaptor->store_8 = _bus_pia_write;
@@ -130,7 +116,7 @@ struct bus_adaptor * bus_create_pia2() {
     data->name = 2;
 
     adaptor->start = 0xFF20;
-    adaptor->end = 0xFF23;
+    adaptor->end = 0xFF33;
     adaptor->data = data;
     adaptor->load_8 = _bus_pia_read;
     adaptor->store_8 = _bus_pia_write;
