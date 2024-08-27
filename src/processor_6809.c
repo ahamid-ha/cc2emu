@@ -393,6 +393,12 @@ void __opcode_bit8(struct processor_state *p, uint16_t address, uint8_t *reg) {
     __update_CC_data8(p, result);
 }
 
+void __opcode_mul(struct processor_state *p) {
+    p->D = p->A * p->B;
+    p->C = p->B & 0x80 ? 1 : 0;
+    p->Z = p->D == 0 ? 1 : 0;
+}
+
 void __opcode_neg(struct processor_state *p, uint16_t address) {
     uint8_t data = processor_load_8(p, address);
     data = (~data) + 1;
@@ -1050,6 +1056,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         op_code_immediate8(0x37, 'PULU', 5, __opcode_pulu)
         op_code(0x39, 'RTS', 5, __opcode_rts)
         op_code(0x3A, 'ABX', 3, __opcode_abx)
+        op_code(0x3D, 'MUL', 11, __opcode_mul)
 
         op_code(0x40, 'NEGA', 2, __opcode_neg_reg, &p->A)
         op_code(0x43, 'COMA', 2, __opcode_com_reg, &p->A)

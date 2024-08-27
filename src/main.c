@@ -2,11 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <SDL2/SDL.h>
-#include <SDL_ttf.h>
 #include <stdbool.h>
 #include <time.h>
 #include "processor_6809.h"
 #include "keyboard.h"
+#include "video.h"
 
 
 #define SEC_TO_NS(sec) ((sec)*1000000000)
@@ -18,45 +18,10 @@ uint64_t nanos()
     return ns;
 }
 
-TTF_Font* font;
-
-char display_chars[] = "@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]  "
-    " !\"#$%&'()*+,-./0123456789:;<=>?";
-void render_text(uint8_t *memory, SDL_Renderer* renderer) {
-    char text_line[33];
-    SDL_Color foreground = { 255, 255, 255 };
-    SDL_Rect dest;
-
-    for (int line=0; line < 16; line++) {
-        for (int col=0; col < 32; col++) {
-            uint8_t data = memory[1024 + (line * 32) + col];
-
-            uint8_t display_char = display_chars[data & 63];
-            if (data >= 128) display_char = 32;
-            // printf("%02x%c ", data, display_char);
-            // putc(display_char, stdout);
-            text_line[col] = display_char;
-        }
-        text_line[33] = 0;
-
-        SDL_Surface* text_surf = TTF_RenderText_Solid(font, text_line, foreground);
-		SDL_Texture *text = SDL_CreateTextureFromSurface(renderer, text_surf);
-
-		dest.x = 20;
-		dest.y = 20 * line;
-		dest.w = text_surf->w;
-		dest.h = text_surf->h;
-		SDL_RenderCopy(renderer, text, NULL, &dest);
-
-		SDL_DestroyTexture(text);
-		SDL_FreeSurface(text_surf);
-    }
-}
-
 int main2(int argc, char* argv[]) {
-    uint8_t a= 3;
-    uint8_t b= 5;
-    uint16_t num = a - b;
+    uint8_t a= 100;
+    uint8_t b= 100;
+    uint16_t num = a * b;
     printf("value = %d\n", num);
 }
 
@@ -67,14 +32,8 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    if ( TTF_Init() < 0 ) {
-		printf("Error initializing TTF %s\n", TTF_GetError());
-        SDL_Quit();
-		return -1;
-	}
-
     // Create a window and renderer
-    SDL_Window* window = SDL_CreateWindow("Simple Graphics", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 640, 480, SDL_WINDOW_SHOWN);
+    SDL_Window* window = SDL_CreateWindow("Simple Graphics", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 256 * 4 + 40, 128 * 4 + 40, SDL_WINDOW_SHOWN);
     if (!window) {
         printf("Failed to create window: %s\n", SDL_GetError());
         SDL_Quit();
@@ -89,14 +48,6 @@ int main(int argc, char* argv[]) {
         SDL_Quit();
         return -1;
     }
-
-    font = TTF_OpenFont("/usr/share/fonts/TTF/NotoMonoNerdFont-Regular.ttf", 20);
-	if ( !font ) {
-		printf("Error creating font %s\n", TTF_GetError());
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-		return -1;
-	}
 
     bool running = true;
 
