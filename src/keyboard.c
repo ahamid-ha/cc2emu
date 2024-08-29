@@ -31,31 +31,90 @@ struct keyboard_status *keyboard_initialize(struct mc6821_status *pia) {
 
 
 #define kb_map(sym, row, column) case sym: ks->keyboard_keys_status[row][column] = is_pressed; break;
+#define kb_map_unshifted(sym, row, column) case sym: ks->keyboard_keys_status[row][column] = is_pressed; ks->keyboard_keys_status[6][7] = 0; break;
+#define kb_map_shifted(sym, row, column) case sym: ks->keyboard_keys_status[row][column] = is_pressed; ks->keyboard_keys_status[6][7] = is_pressed; break;
 
-void keyboard_set_key(struct keyboard_status *ks, int sym, int is_pressed) {
+void keyboard_set_char(struct keyboard_status *ks, int sym, int is_pressed) {
+    switch(sym) {
+        kb_map_unshifted('0', 4, 0)
+
+        kb_map_unshifted('1', 4, 1)
+        kb_map_shifted('!', 4, 1)
+
+        kb_map_unshifted('2', 4, 2)
+        kb_map_shifted('"', 4, 2)
+
+        kb_map_unshifted('3', 4, 3)
+        kb_map_shifted('#', 4, 3)
+
+        kb_map_unshifted('4', 4, 4)
+        kb_map_shifted('$', 4, 4)
+
+        kb_map_unshifted('5', 4, 5)
+        kb_map_shifted('%', 4, 5)
+
+        kb_map_unshifted('6', 4, 6)
+        kb_map_shifted('&', 4, 6)
+
+        kb_map_unshifted('7', 4, 7)
+        kb_map_shifted('\'', 4, 7)
+
+        kb_map_unshifted('8', 4, 8)
+        kb_map_shifted('(', 4, 8)
+
+        kb_map_unshifted('9', 4, 9)
+        kb_map_shifted(')', 4, 9)
+
+        kb_map_unshifted('-', 5, 5)
+        kb_map_shifted('=', 5, 5)
+
+        kb_map_unshifted(';', 5, 3)
+        kb_map_shifted('+', 5, 3)
+
+        kb_map_unshifted(':', 5, 2)
+        kb_map_shifted('*', 5, 2)
+
+        kb_map_unshifted(',', 5, 4)
+        kb_map_shifted('<', 5, 4)
+
+        kb_map_unshifted('.', 5, 6)
+        kb_map_shifted('>', 5, 6)
+
+        kb_map_unshifted('/', 5, 7)
+        kb_map_shifted('?', 5, 7)
+
+        kb_map_unshifted('@', 0, 0)
+    }
+}
+
+#define kb_map_symbol(sym, unshifted, shifted) case sym: if (event->keysym.mod & KMOD_SHIFT) keyboard_set_char(ks, shifted, is_pressed); else keyboard_set_char(ks, unshifted, is_pressed); break;
+
+void keyboard_set_key(struct keyboard_status *ks, SDL_KeyboardEvent *event, int is_pressed) {
+    int sym = event->keysym.sym;
+
     switch(sym) {
         kb_map(SDLK_LSHIFT, 6, 7)
         kb_map(SDLK_RSHIFT, 6, 7)
         kb_map(SDLK_ESCAPE, 6, 2)
         kb_map(SDLK_F1, 6, 1)
         kb_map(SDLK_RETURN, 6, 0)
-        kb_map(SDLK_SLASH, 5, 7)
-        kb_map(SDLK_PERIOD, 5, 6)
-        kb_map(SDLK_MINUS, 5, 5)
-        kb_map(SDLK_COMMA, 5, 4)
-        kb_map(SDLK_SEMICOLON, 5, 3)
-        kb_map(SDLK_BACKSLASH, 5, 2)
-        kb_map(SDLK_COLON, 5, 2)
-        kb_map(SDLK_9, 5, 1)
-        kb_map(SDLK_8, 5, 0)
-        kb_map(SDLK_7, 4, 7)
-        kb_map(SDLK_6, 4, 6)
-        kb_map(SDLK_5, 4, 5)
-        kb_map(SDLK_4, 4, 4)
-        kb_map(SDLK_3, 4, 3)
-        kb_map(SDLK_2, 4, 2)
-        kb_map(SDLK_1, 4, 1)
-        kb_map(SDLK_0, 4, 0)
+        kb_map_symbol(SDLK_EQUALS, '=', '+')
+        kb_map_symbol(SDLK_SLASH, '/', '?')
+        kb_map_symbol(SDLK_PERIOD, '.', '>')
+        kb_map_symbol(SDLK_MINUS, '-', '_')
+        kb_map_symbol(SDLK_COMMA, ',', '<')
+        kb_map_symbol(SDLK_SEMICOLON, ';', ':')
+        kb_map_symbol(SDLK_QUOTE, '\'', '"')
+        kb_map_symbol(SDLK_9, '9', '(')
+        kb_map_symbol(SDLK_8, '8', '*')
+        kb_map_symbol(SDLK_7, '7', '&')
+        kb_map_symbol(SDLK_6, '6', '^')
+        kb_map_symbol(SDLK_5, '5', '%')
+        kb_map_symbol(SDLK_4, '4', '$')
+        kb_map_symbol(SDLK_3, '3', '#')
+        kb_map_symbol(SDLK_2, '2', '@')
+        kb_map_symbol(SDLK_1, '1', '!')
+        kb_map_symbol(SDLK_0, '0', ')')
         kb_map(SDLK_SPACE, 3, 7)
         kb_map(SDLK_RIGHT, 3, 6)
         kb_map(SDLK_BACKSPACE, 3, 5)
@@ -88,6 +147,7 @@ void keyboard_set_key(struct keyboard_status *ks, int sym, int is_pressed) {
         kb_map(SDLK_c, 0, 3)
         kb_map(SDLK_b, 0, 2)
         kb_map(SDLK_a, 0, 1)
-        kb_map(SDLK_AT, 0, 0)
+        default:
+            keyboard_set_char(ks, sym, is_pressed);
     }
 }

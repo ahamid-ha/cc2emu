@@ -86,10 +86,10 @@ int main(int argc, char* argv[]) {
             }
 
             if (event.type == SDL_KEYDOWN) {
-                keyboard_set_key(keyboard, event.key.keysym.sym, 1);
+                keyboard_set_key(keyboard, &event.key, 1);
             }
             if (event.type == SDL_KEYUP) {
-                keyboard_set_key(keyboard, event.key.keysym.sym, 0);
+                keyboard_set_key(keyboard, &event.key, 0);
             }
         }
 
