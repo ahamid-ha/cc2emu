@@ -1,4 +1,31 @@
 #include "video.h"
+#include "mc6821.h"
+#include "sam.h"
+
+// source https://en.wikipedia.org/wiki/Motorola_6847#Signal_levels_and_color_palette
+#define COLOR_GREEN 0x1cd510ff
+#define COLOR_YELLOW 0xe2db0fff
+#define COLOR_BLUE 0x0320ffff
+#define COLOR_RED 0xe2200aff
+#define COLOR_BUFF 0xcddbe0ff
+#define COLOR_CYAN 0x16d0e2ff
+#define COLOR_MAGENTA 0xcb39e2ff
+#define COLOR_ORANGE 0xcc2d10ff
+#define COLOR_BLACK 0x101010ff
+#define COLOR_DARK_GREEN 0x003400ff
+#define COLOR_DARK_ORANGE 0x321400ff
+
+uint32_t _text_render_colors[] = {
+    COLOR_GREEN,
+    COLOR_YELLOW,
+    COLOR_BLUE,
+    COLOR_RED,
+    COLOR_BUFF,
+    COLOR_CYAN,
+    COLOR_MAGENTA,
+    COLOR_ORANGE
+};
+
 
 const unsigned char epd_bitmap_mc6847charset [] = {
 	0x0e, 0x11, 0x10, 0x16, 0x15, 0x15, 0x0e, 0x04, 0x0a, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x0f, 0x12, 
@@ -31,21 +58,23 @@ const unsigned char epd_bitmap_mc6847charset [] = {
 	0x00, 0x00, 0x02, 0x04, 0x08, 0x10, 0x08, 0x04, 0x02, 0x06, 0x09, 0x08, 0x04, 0x04, 0x00, 0x04
 };
 
-void render_text(uint8_t *memory, SDL_Renderer* renderer) {
-    int start_x = 20;
-    int start_y = 20;
-    SDL_Rect rect;
+#define draw_pixel(x, y, c) pixels[(x) + ((y) * (pitch >> 2))] = c
+void render_text(struct video_status *v) {
+    uint16_t start_pos = v->sam->F << 9;
+    uint8_t *memory = v->memory;
 
-    SDL_SetRenderDrawColor(renderer, 0, 200, 0, 255);
-    rect.x = start_x;
-    rect.y = start_y;
-    rect.w = 256 * 4;
-    rect.h = 128 * 4;
-    SDL_RenderFillRect(renderer, &rect);
+    uint32_t *color_space = _text_render_colors;
+    uint32_t text_background = v->mode & 0x1 ? COLOR_DARK_ORANGE : COLOR_DARK_GREEN;
+    uint32_t text_foreground = v->mode & 0x1 ? COLOR_ORANGE : COLOR_GREEN;
+
+    uint32_t* pixels;
+    int pitch;
+
+    SDL_LockTexture( v->texture, NULL, (void**)&pixels, &pitch );
 
     for (int line=0; line < 16; line++) {
         for (int col=0; col < 32; col++) {
-            uint16_t data = memory[1024 + (line * 32) + col];
+            uint16_t data = memory[start_pos + (line * 32) + col];
 
             if (data < 128) {
                 uint8_t inverted = 0xff;
@@ -53,65 +82,79 @@ void render_text(uint8_t *memory, SDL_Renderer* renderer) {
                     inverted = 0;
                 }
                 data = data & 63;
-                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-                for (int row = 0; row < 8; row++) {
+                for (int row = 0; row < 12; row++) {
                     uint8_t mask = 0;
-                    if (row < 7) mask = epd_bitmap_mc6847charset[data * 7 + row] << 1;
+                    if (row >= 3 && row < 10) mask = epd_bitmap_mc6847charset[data * 7 + row - 3] << 2;
                     mask = mask ^ inverted;
                     for (int bit = 0; bit < 8; bit++) {
                         if ( (1 << bit) & mask) {
-                            rect.x = start_x + (col * 8 + bit) * 4;
-                            rect.y = start_y + (line * 8 + row) * 4;
-                            rect.w = 4;
-                            rect.h = 4;
-                            SDL_RenderFillRect(renderer, &rect);
+                            draw_pixel(col * 8 + bit, line * 12 + row, text_background);
+                        } else {
+                            draw_pixel(col * 8 + bit, line * 12 + row, text_foreground);
                         }
                     }
                 }
 
 
             } else {
-                rect.w = 4*8;
-                rect.h = 4*8;
-                rect.x = start_x + (col * 8) * 4;
-                rect.y = start_y + (line * 8) * 4;
-                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-                SDL_RenderFillRect(renderer, &rect);
                 uint8_t color = (data >> 4) & 0b111;
-                switch (color)
-                {
-                    case 0: SDL_SetRenderDrawColor(renderer, 0, 200, 0, 255); break;  // green
-                    case 1: SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255); break;  // yellow
-                    case 2: SDL_SetRenderDrawColor(renderer, 0, 0, 200, 255); break;  // blue
-                    case 3: SDL_SetRenderDrawColor(renderer, 200, 0, 0, 255); break;  // red
-                    case 4: SDL_SetRenderDrawColor(renderer, 218, 160, 109, 255); break;  // buff
-                    case 5: SDL_SetRenderDrawColor(renderer, 0, 200, 200, 255); break;  // cyan
-                    case 6: SDL_SetRenderDrawColor(renderer, 200, 0, 200, 255); break;  // magenta
-                    case 7: SDL_SetRenderDrawColor(renderer, 255, 165, 0, 255); break;  // orange
-                }
-                rect.w = 4*4;
-                rect.h = 4*4;
-                if (data & 0b1000) {
-                    rect.x = start_x + (col * 8) * 4;
-                    rect.y = start_y + (line * 8) * 4;
-                    SDL_RenderFillRect(renderer, &rect);
-                }
-                if (data & 0b0100) {
-                    rect.x = start_x + (col * 8 + 4) * 4;
-                    rect.y = start_y + (line * 8) * 4;
-                    SDL_RenderFillRect(renderer, &rect);
-                }
-                if (data & 0b0010) {
-                    rect.x = start_x + (col * 8) * 4;
-                    rect.y = start_y + (line * 8 + 4) * 4;
-                    SDL_RenderFillRect(renderer, &rect);
-                }
-                if (data & 0b0001) {
-                    rect.x = start_x + (col * 8 + 4) * 4;
-                    rect.y = start_y + (line * 8 + 4) * 4;
-                    SDL_RenderFillRect(renderer, &rect);
+
+                for (int rec_x = 0; rec_x < 4; rec_x++) {
+                    for (int rec_y = 0; rec_y < 6; rec_y++) {
+                        if (data & 0b1000) {
+                            draw_pixel(col * 8 + rec_x, line * 12 + rec_y, color_space[color]);
+                        } else {
+                            draw_pixel(col * 8 + rec_x, line * 12 + rec_y, COLOR_BLACK);
+                        }
+                        if (data & 0b0100) {
+                            draw_pixel(col * 8 + rec_x + 4, line * 12 + rec_y, color_space[color]);
+                        } else {
+                            draw_pixel(col * 8 + rec_x + 4, line * 12 + rec_y, COLOR_BLACK);
+                        }
+                        if (data & 0b0010) {
+                            draw_pixel(col * 8 + rec_x, line * 12 + rec_y + 6, color_space[color]);
+                        } else {
+                            draw_pixel(col * 8 + rec_x, line * 12 + rec_y + 6, COLOR_BLACK);
+                        }
+                        if (data & 0b0001) {
+                            draw_pixel(col * 8 + rec_x + 4, line * 12 + rec_y + 6, color_space[color]);
+                        } else {
+                            draw_pixel(col * 8 + rec_x + 4, line * 12 + rec_y + 6, COLOR_BLACK);
+                        }
+                    }
                 }
             }
         }
     }
+
+    SDL_Rect dest = {
+        .h = 192 * 4,
+        .w = 256 * 4,
+        .x = 20,
+        .y = 20,
+    };
+
+    SDL_UnlockTexture(v->texture);
+    SDL_RenderCopy(v->renderer, v->texture, NULL, &dest);
+    // SDL_RenderCopy(v->renderer, v->texture, NULL, NULL);
+}
+
+void _video_mode_change_cb(struct mc6821_status *pia, int peripheral_address, uint8_t value, void *data) {
+    struct video_status *v = (struct video_status *)data;
+    v->mode = value >> 3;
+    printf("Video %d\n", v->mode);
+}
+
+struct video_status *video_initialize(struct sam_status *sam, struct mc6821_status *pia, uint8_t *memory, SDL_Renderer* renderer) {
+    struct video_status *v=malloc(sizeof(struct video_status));
+    v->memory = memory;
+    v->mode = 0;
+    v->sam = sam;
+
+    v->renderer = renderer;
+    v->texture = SDL_CreateTexture( renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, 256, 192 );
+
+    mc6821_register_cb(pia, 1, (mc6821_cb)_video_mode_change_cb, v);
+
+    return v;
 }

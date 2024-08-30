@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Create a window and renderer
-    SDL_Window* window = SDL_CreateWindow("Simple Graphics", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 256 * 4 + 40, 128 * 4 + 40, SDL_WINDOW_SHOWN);
+    SDL_Window* window = SDL_CreateWindow("Simple Graphics", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 256 * 4 + 40, 192 * 4 + 40, SDL_WINDOW_SHOWN);
     if (!window) {
         printf("Failed to create window: %s\n", SDL_GetError());
         SDL_Quit();
@@ -41,7 +41,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Renderer for drawing graphics
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, 0);
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     if (!renderer) {
         printf("Failed to create renderer: %s\n", SDL_GetError());
         SDL_DestroyWindow(window);
@@ -70,7 +70,11 @@ int main(int argc, char* argv[]) {
     struct bus_adaptor *pia2 = bus_create_pia2();
     processor_register_bus_adaptor(&p.bus, pia2);
 
-    struct keyboard_status *keyboard = keyboard_initialize((struct mc6821_status*)pia1->data);
+    struct bus_adaptor *sam = bus_create_sam();
+    processor_register_bus_adaptor(&p.bus, sam);
+
+    struct keyboard_status *keyboard = keyboard_initialize(PIA(pia1));
+    struct video_status *video = video_initialize(SAM(sam), PIA(pia2), memory_buffer, renderer);
 
     processor_reset(&p);
 
@@ -102,13 +106,7 @@ int main(int argc, char* argv[]) {
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
-        // Draw something (in this case, white lines)
-        // for (int i = 10; i < 630; i += 20) {
-        //     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        //     SDL_RenderDrawLine(renderer, i, 0, i, 480);
-        // }
-
-        render_text(memory_buffer, renderer);
+        render_text(video);
 
         // Update the renderer
         SDL_RenderPresent(renderer);

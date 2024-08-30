@@ -1,5 +1,7 @@
 #include <inttypes.h>
 
+#ifndef __MC6821__
+#define __MC6821__
 
 #define MC6821_MAX_CB_COUNT 8
 
@@ -33,5 +35,9 @@ struct mc6821_status {
     } output_change_cb[MC6821_MAX_CB_COUNT];
 };
 
+#define PIA(p) (struct mc6821_status*)p->data
+
 void mc6821_peripheral_input(struct mc6821_status *p, int peripheral_address, uint8_t value, uint8_t mask);
 int mc6821_register_cb(struct mc6821_status *p, int peripheral_address, mc6821_cb cb, void *data);
+
+#endif
