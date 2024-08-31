@@ -106,7 +106,7 @@ int main(int argc, char* argv[]) {
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
-        render_text(video);
+        video_render(video);
 
         // Update the renderer
         SDL_RenderPresent(renderer);

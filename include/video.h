@@ -12,4 +12,4 @@ struct video_status {
 };
 
 struct video_status *video_initialize(struct sam_status *sam, struct mc6821_status *pia, uint8_t *memory, SDL_Renderer* renderer);
-void render_text(struct video_status *v);
+void video_render(struct video_status *v);

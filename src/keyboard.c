@@ -126,11 +126,12 @@ void keyboard_set_key(struct keyboard_status *ks, SDL_KeyboardEvent *event, int 
         kb_map(SDLK_LSHIFT, 6, 7)
         kb_map(SDLK_RSHIFT, 6, 7)
         kb_map(SDLK_ESCAPE, 6, 2)
-        kb_map(SDLK_F1, 6, 1)
+        kb_map_shifted(SDLK_F2, 4, 0)    // Upper case
+        kb_map(SDLK_F10, 6, 2)    // break
+        kb_map(SDLK_F1, 6, 1)    // clr
         kb_map_symbol(SDLK_EQUALS, '=', '+')
         kb_map_symbol(SDLK_SLASH, '/', '?')
         kb_map_symbol(SDLK_PERIOD, '.', '>')
-        // kb_map_symbol(SDLK_MINUS, '-', '_')
         kb_map_symbol(SDLK_COMMA, ',', '<')
         kb_map_symbol(SDLK_SEMICOLON, ';', ':')
         kb_map_symbol(SDLK_QUOTE, '\'', '"')

@@ -2,7 +2,6 @@
 #include "mc6821.h"
 #include "sam.h"
 
-// source https://en.wikipedia.org/wiki/Motorola_6847#Signal_levels_and_color_palette
 #define COLOR_GREEN 0x1cd510ff
 #define COLOR_YELLOW 0xe2db0fff
 #define COLOR_BLUE 0x0320ffff
@@ -10,7 +9,7 @@
 #define COLOR_BUFF 0xcddbe0ff
 #define COLOR_CYAN 0x16d0e2ff
 #define COLOR_MAGENTA 0xcb39e2ff
-#define COLOR_ORANGE 0xcc2d10ff
+#define COLOR_ORANGE 0xffbb44ff
 #define COLOR_BLACK 0x101010ff
 #define COLOR_DARK_GREEN 0x003400ff
 #define COLOR_DARK_ORANGE 0x321400ff
@@ -58,23 +57,111 @@ const unsigned char epd_bitmap_mc6847charset [] = {
 	0x00, 0x00, 0x02, 0x04, 0x08, 0x10, 0x08, 0x04, 0x02, 0x06, 0x09, 0x08, 0x04, 0x04, 0x00, 0x04
 };
 
-#define draw_pixel(x, y, c) pixels[(x) + ((y) * (pitch >> 2))] = c
-void render_text(struct video_status *v) {
+#define draw_pixel(x, y, c) pixels[(x) + ((y) * (pitch))] = c
+
+void render_graphics(struct video_status *v) {
     uint16_t start_pos = v->sam->F << 9;
     uint8_t *memory = v->memory;
 
-    uint32_t *color_space = _text_render_colors;
-    uint32_t text_background = v->mode & 0x1 ? COLOR_DARK_ORANGE : COLOR_DARK_GREEN;
-    uint32_t text_foreground = v->mode & 0x1 ? COLOR_ORANGE : COLOR_GREEN;
+    uint8_t css = (v->mode & 0x1) << 2;
+    int color_bits_shift = v->mode & 0b10 ? 1 : 2;
+    uint8_t color_bits_mask = v->mode & 0b10 ? 0b10000000 : 0b11000000;
+    uint8_t mode = (v->mode >> 1) & 7;
+    int w,h;
+
+    switch(mode) {
+        case 0:
+            w = 64;
+            h = 64;
+            break;
+        case 1:
+        case 2:
+            w = 128;
+            h = 64;
+            break;
+        case 3:
+        case 4:
+            w = 128;
+            h = 96;
+            break;
+        case 5:
+        case 6:
+            w = 128;
+            h = 192;
+            break;
+        case 7:
+            w = 256;
+            h = 192;
+            break;
+    }
 
     uint32_t* pixels;
     int pitch;
 
     SDL_LockTexture( v->texture, NULL, (void**)&pixels, &pitch );
+    pitch = pitch >> 2;
+
+    for (int y=0; y<h; y++) {
+        for (int x=0; x<w; ) {
+            uint8_t data = memory[start_pos];
+            for (int bit_pos=0; bit_pos < 8; bit_pos+=color_bits_shift) {
+                int color_index = (data & color_bits_mask) >> (8 - color_bits_shift) | css;
+
+                uint32_t color;
+                if (color_bits_shift == 1) {
+                    // two color
+                    if (color_index & 1) {
+                        color = _text_render_colors[color_index - 1];
+                    } else {
+                        color = COLOR_BLACK;
+                    }
+                } else {
+                    color = _text_render_colors[color_index];
+                }
+                draw_pixel(x, y, color);
+
+                x += 1;
+                data = data << color_bits_shift;
+            }
+            start_pos++;
+        }
+    }
+
+    SDL_Rect src = {
+        .h = h,
+        .w = w,
+        .x = 0,
+        .y = 0,
+    };
+    SDL_Rect dest = {
+        .h = 192 * 4,
+        .w = 256 * 4,
+        .x = 20,
+        .y = 20,
+    };
+
+    SDL_UnlockTexture(v->texture);
+    SDL_RenderCopy(v->renderer, v->texture, &src, &dest);
+}
+
+void render_text(struct video_status *v) {
+    uint16_t start_pos = v->sam->F << 9;
+    uint8_t *memory = v->memory;
+
+    uint32_t text_background = v->mode & 0x1 ? COLOR_DARK_ORANGE : COLOR_DARK_GREEN;
+    uint32_t text_foreground = v->mode & 0x1 ? COLOR_ORANGE : COLOR_GREEN;
+    int color_bits_shift = v->mode & 0b10 ? 5 : 4;
+    int box_lines = v->mode & 0b10 ? 4 : 6;
+
+    uint32_t* pixels;
+    int pitch;
+
+    SDL_LockTexture( v->texture, NULL, (void**)&pixels, &pitch );
+    pitch = pitch >> 2;
 
     for (int line=0; line < 16; line++) {
         for (int col=0; col < 32; col++) {
-            uint16_t data = memory[start_pos + (line * 32) + col];
+            uint8_t data = memory[start_pos + (line * 32) + col];
 
             if (data < 128) {
                 uint8_t inverted = 0xff;
@@ -94,34 +181,27 @@ void render_text(struct video_status *v) {
                         }
                     }
                 }
-
-
             } else {
-                uint8_t color = (data >> 4) & 0b111;
+                uint8_t color = (data >> color_bits_shift) & 0b111;
+                if ((v->mode & 0x1) && color_bits_shift == 2) color |= 0b100;
 
-                for (int rec_x = 0; rec_x < 4; rec_x++) {
-                    for (int rec_y = 0; rec_y < 6; rec_y++) {
-                        if (data & 0b1000) {
-                            draw_pixel(col * 8 + rec_x, line * 12 + rec_y, color_space[color]);
-                        } else {
-                            draw_pixel(col * 8 + rec_x, line * 12 + rec_y, COLOR_BLACK);
-                        }
-                        if (data & 0b0100) {
-                            draw_pixel(col * 8 + rec_x + 4, line * 12 + rec_y, color_space[color]);
-                        } else {
-                            draw_pixel(col * 8 + rec_x + 4, line * 12 + rec_y, COLOR_BLACK);
-                        }
-                        if (data & 0b0010) {
-                            draw_pixel(col * 8 + rec_x, line * 12 + rec_y + 6, color_space[color]);
-                        } else {
-                            draw_pixel(col * 8 + rec_x, line * 12 + rec_y + 6, COLOR_BLACK);
-                        }
-                        if (data & 0b0001) {
-                            draw_pixel(col * 8 + rec_x + 4, line * 12 + rec_y + 6, color_space[color]);
-                        } else {
-                            draw_pixel(col * 8 + rec_x + 4, line * 12 + rec_y + 6, COLOR_BLACK);
+                for (int box_row = 12 - box_lines; box_row >= 0;) {
+                    for (int rec_x = 0; rec_x < 4; rec_x++) {
+                        for (int rec_y = 0; rec_y < box_lines; rec_y++) {
+                            if (data & 0b10) {
+                                draw_pixel(col * 8 + rec_x, line * 12 + rec_y + box_row, _text_render_colors[color]);
+                            } else {
+                                draw_pixel(col * 8 + rec_x, line * 12 + rec_y + box_row, COLOR_BLACK);
+                            }
+                            if (data & 0b01) {
+                                draw_pixel(col * 8 + rec_x + 4, line * 12 + rec_y + box_row, _text_render_colors[color]);
+                            } else {
+                                draw_pixel(col * 8 + rec_x + 4, line * 12 + rec_y + box_row, COLOR_BLACK);
+                            }
                         }
                     }
+                    box_row -= box_lines;
+                    data = data >> 2;
                 }
             }
         }
@@ -139,10 +219,17 @@ void render_text(struct video_status *v) {
     // SDL_RenderCopy(v->renderer, v->texture, NULL, NULL);
 }
 
+void video_render(struct video_status *v) {
+    if (v->mode & 0b10000) {
+        render_graphics(v);
+    } else {
+        render_text(v);
+    }
+}
+
 void _video_mode_change_cb(struct mc6821_status *pia, int peripheral_address, uint8_t value, void *data) {
     struct video_status *v = (struct video_status *)data;
     v->mode = value >> 3;
-    printf("Video %d\n", v->mode);
 }
 
 struct video_status *video_initialize(struct sam_status *sam, struct mc6821_status *pia, uint8_t *memory, SDL_Renderer* renderer) {
