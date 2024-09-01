@@ -40,6 +40,10 @@ struct processor_state {
 
     uint64_t _nano_time_passed;
     int _stopped;
+    int _dump_execution;
+    int _irq;
+    int _firq;
+    int _nmi;
 };
 
 void processor_init(struct processor_state *p);

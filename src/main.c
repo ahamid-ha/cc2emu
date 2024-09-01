@@ -100,6 +100,7 @@ int main(int argc, char* argv[]) {
         p._nano_time_passed = 0;
         while (p._nano_time_passed < frame_time_nano) {
             processor_next_opcode(&p);
+            p._irq = mc6821_interrupt_state(PIA(pia1));  // TODO: should be done in a better way
         }
 
         // Clear the renderer with a black color
@@ -122,6 +123,10 @@ int main(int argc, char* argv[]) {
 
             clock_nanosleep(CLOCK_MONOTONIC, 0, &res, NULL);
         }
+
+        // generate an interrupt at every v sync at CB1 pin of PIA1
+        mc6821_interrupt_1_input(PIA(pia1), 1, 1);
+        mc6821_interrupt_1_input(PIA(pia1), 1, 0);
     }
 
     // Clean up resources before exiting

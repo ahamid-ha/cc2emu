@@ -594,6 +594,28 @@ void __opcode_rts(struct processor_state *p) {
     p->S += 2;
 }
 
+void __opcode_rti(struct processor_state *p) {
+    p->CC = processor_load_8(p, p->S);
+    p->S++;
+    if (p->E) {
+        p->A = processor_load_8(p, p->S);
+        p->S++;
+        p->B = processor_load_8(p, p->S);
+        p->S++;
+        p->DP = processor_load_8(p, p->S);
+        p->S++;
+        p->X = processor_load_16(p, p->S);
+        p->S += 2;
+        p->Y = processor_load_16(p, p->S);
+        p->S += 2;
+        p->U = processor_load_16(p, p->S);
+        p->S += 2;
+        add_cycles(9);
+    }
+    p->PC = processor_load_16(p, p->S);
+    p->S += 2;
+}
+
 void __opcode_or(struct processor_state *p, uint16_t address, uint8_t *reg) {
     uint8_t data = processor_load_8(p, address);
     *reg = (*reg) | data;
@@ -1056,6 +1078,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         op_code_immediate8(0x37, 'PULU', 5, __opcode_pulu)
         op_code(0x39, 'RTS', 5, __opcode_rts)
         op_code(0x3A, 'ABX', 3, __opcode_abx)
+        op_code(0x3B, 'RTS', 6, __opcode_rti)
         op_code(0x3D, 'MUL', 11, __opcode_mul)
 
         op_code(0x40, 'NEGA', 2, __opcode_neg_reg, &p->A)
@@ -1307,6 +1330,66 @@ void processor_next_opcode(struct processor_state *p) {
         add_cycles(1);
         return;
     }
+
+    if (p->_nmi) {
+        p->E = 1;
+        p->S -= 2;
+        processor_store_16(p, p->S, p->PC);
+        p->S -= 2;
+        processor_store_16(p, p->S, p->U);
+        p->S -= 2;
+        processor_store_16(p, p->S, p->Y);
+        p->S -= 2;
+        processor_store_16(p, p->S, p->X);
+        p->S--;
+        processor_store_8(p, p->S, p->DP);
+        p->S--;
+        processor_store_8(p, p->S, p->B);
+        p->S--;
+        processor_store_8(p, p->S, p->A);
+        p->S--;
+        processor_store_8(p, p->S, p->CC);
+
+        p->F = 1;
+        p->I = 1;
+        p->PC = processor_load_16(p, 0xfffc);
+        add_cycles(18);
+    }
+    if (p->_firq && !p->F) {
+        p->E = 0;
+        p->S -= 2;
+        processor_store_16(p, p->S, p->PC);
+        p->S--;
+        processor_store_8(p, p->S, p->CC);
+        p->I = 1;
+        p->F = 1;
+        p->PC = processor_load_16(p, 0xfff6);
+        add_cycles(9);
+    }
+    if (p->_irq && !p->I) {
+        p->E = 1;
+        p->S -= 2;
+        processor_store_16(p, p->S, p->PC);
+        p->S -= 2;
+        processor_store_16(p, p->S, p->U);
+        p->S -= 2;
+        processor_store_16(p, p->S, p->Y);
+        p->S -= 2;
+        processor_store_16(p, p->S, p->X);
+        p->S--;
+        processor_store_8(p, p->S, p->DP);
+        p->S--;
+        processor_store_8(p, p->S, p->B);
+        p->S--;
+        processor_store_8(p, p->S, p->A);
+        p->S--;
+        processor_store_8(p, p->S, p->CC);
+
+        p->I = 1;
+        p->PC = processor_load_16(p, 0xfff8);
+        add_cycles(18);
+    }
+
     uint16_t org_address = p->PC;
     uint16_t opcode = processor_load_8(p, p->PC++);
 
@@ -1318,9 +1401,9 @@ void processor_next_opcode(struct processor_state *p) {
 
     // if (org_address >= 0xA1C1 && org_address <= 0xA1F9)
     //     printf("Execuding %04X opcode %04X\n", org_address, opcode);
-    // printf("Execuding %04X opcode %04X\n", org_address, opcode);
+    if (p->_dump_execution) printf("Execuding %04X opcode %04X\n", org_address, opcode);
     execute_opcode(p, opcode);
-    // processor_dump(p);
+    if (p->_dump_execution) processor_dump(p);
     // if (org_address >= 0xA1C1 && org_address <= 0xA1F9) {
     //     processor_dump(p);
     //     if (org_address == 0xA1F9)

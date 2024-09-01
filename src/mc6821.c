@@ -29,7 +29,9 @@ uint8_t mc6821_read_register(struct mc6821_status *p, int address) {
 
 void mc6821_peripheral_write_register(struct mc6821_peripheral_status *ps, uint16_t address, uint8_t value) {
     if (address) {
-        ps->cr = value;
+        // the ifq flags bits can't be controlled
+        value = value & 0x3f;
+        ps->cr = (ps->cr & 0xc0) | value; // keep the value of the irg flags
     }
     else if (ps->ddr_access) {
         value = value & ps->ddr;
@@ -65,6 +67,53 @@ void mc6821_peripheral_input(struct mc6821_status *p, int peripheral_address, ui
     value = value & mask;
     ps->pr = ps->pr & (~mask);
     ps->pr = ps->pr | value;
+}
+
+void mc6821_interrupt_1_input(struct mc6821_status *p, int peripheral_address, uint8_t value) {
+    struct mc6821_peripheral_status *ps = peripheral(peripheral_address);
+
+    if (ps->c1_transition) {
+        // low to high transition
+        if (ps->peripheral_c1 == 0 && value) {
+            ps->irq1 = 1;
+        }
+    } else {
+        // high to low transition
+        if (ps->peripheral_c1 == 1 && !value) {
+            ps->irq1 = 1;
+        }
+    }
+    ps->peripheral_c1 = value ? 1 : 0;
+}
+
+void mc6821_interrupt_2_input(struct mc6821_status *p, int peripheral_address, uint8_t value) {
+    struct mc6821_peripheral_status *ps = peripheral(peripheral_address);
+
+    if (ps->c2_output) return;  // output pin, don't care for input
+
+    if (ps->c2_transition) {
+        // low to high transition
+        if (ps->peripheral_c2 == 0 && value) {
+            ps->irq2 = 1;
+        }
+    } else {
+        // high to low transition
+        if (ps->peripheral_c2 == 1 && !value) {
+            ps->irq2 = 1;
+        }
+    }
+    ps->peripheral_c2 = value ? 1 : 0;
+}
+
+// Returns 1 if any irq is enabled and its state is active
+int mc6821_interrupt_state(struct mc6821_status *p) {
+    for (int peripheral_address=0; peripheral_address < 2; peripheral_address++) {
+        struct mc6821_peripheral_status *ps = peripheral(peripheral_address);
+        if(ps->c1_enable && ps->irq1) return 1;
+        if(ps->c2_enable && ps->irq2) return 1;
+    }
+
+    return 0;
 }
 
 int mc6821_register_cb(struct mc6821_status *p, int peripheral_address, mc6821_cb cb, void *data) {

@@ -150,7 +150,7 @@ void render_text(struct video_status *v) {
 
     uint32_t text_background = v->mode & 0x1 ? COLOR_DARK_ORANGE : COLOR_DARK_GREEN;
     uint32_t text_foreground = v->mode & 0x1 ? COLOR_ORANGE : COLOR_GREEN;
-    int color_bits_shift = v->mode & 0b10 ? 5 : 4;
+    int color_bits_shift = v->mode & 0b10 ? 6 : 4;
     int box_lines = v->mode & 0b10 ? 4 : 6;
 
     uint32_t* pixels;
@@ -163,7 +163,7 @@ void render_text(struct video_status *v) {
         for (int col=0; col < 32; col++) {
             uint8_t data = memory[start_pos + (line * 32) + col];
 
-            if (data < 128) {
+            if (data < 128 && color_bits_shift == 4) {
                 uint8_t inverted = 0xff;
                 if (data >= 64) {
                     inverted = 0;
@@ -183,7 +183,7 @@ void render_text(struct video_status *v) {
                 }
             } else {
                 uint8_t color = (data >> color_bits_shift) & 0b111;
-                if ((v->mode & 0x1) && color_bits_shift == 2) color |= 0b100;
+                if ((v->mode & 0x1) && color_bits_shift == 6) color |= 0b100;
 
                 for (int box_row = 12 - box_lines; box_row >= 0;) {
                     for (int rec_x = 0; rec_x < 4; rec_x++) {
