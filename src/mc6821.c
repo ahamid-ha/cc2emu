@@ -12,6 +12,7 @@ uint8_t mc6821_peripheral_read_register(struct mc6821_peripheral_status *p, int 
         return p->cr;
     }
     if (p->ddr_access) {
+        if (p->_dump_read) printf("******************* Reading register with value %02X\n", p->pr);
         p->irq1 = 0;
         p->irq2 = 0;
         return p->pr;

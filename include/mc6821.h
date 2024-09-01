@@ -25,6 +25,8 @@ struct mc6821_peripheral_status {
     // track status
     uint8_t peripheral_c1;
     uint8_t peripheral_c2;
+
+    int _dump_read;
 };
 
 struct mc6821_status;
@@ -42,7 +44,7 @@ struct mc6821_status {
     } output_change_cb[MC6821_MAX_CB_COUNT];
 };
 
-#define PIA(p) (struct mc6821_status*)p->data
+#define PIA(p) ((struct mc6821_status*)p->data)
 
 void mc6821_peripheral_input(struct mc6821_status *p, int peripheral_address, uint8_t value, uint8_t mask);
 int mc6821_register_cb(struct mc6821_status *p, int peripheral_address, mc6821_cb cb, void *data);

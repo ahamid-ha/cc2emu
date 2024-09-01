@@ -1,5 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <execinfo.h>
+#include <signal.h>
+#include <unistd.h>
 #include <string.h>
 #include <SDL2/SDL.h>
 #include <stdbool.h>
@@ -18,6 +21,19 @@ uint64_t nanos()
     return ns;
 }
 
+void segv_handler(int sig) {
+  void *array[10];
+  size_t size;
+
+  // get void*'s for all entries on the stack
+  size = backtrace(array, 10);
+
+  // print out all the frames to stderr
+  fprintf(stderr, "Error: signal %d:\n", sig);
+  backtrace_symbols_fd(array, size, STDERR_FILENO);
+  exit(1);
+}
+
 int main2(int argc, char* argv[]) {
     uint8_t a= 100;
     uint8_t b= 100;
@@ -25,7 +41,60 @@ int main2(int argc, char* argv[]) {
     printf("value = %d\n", num);
 }
 
+#define KEY_BOARD_BUFFER_LENGTH 2000
+SDL_Event keyboard_buffer[KEY_BOARD_BUFFER_LENGTH];  // ring buffer
+int keyboard_buffer_length;
+int keyboard_buffer_start = 0;
+int keyboard_buffer_end = 0;
+
+int keyboard_buffer_empty() {
+    return keyboard_buffer_start == keyboard_buffer_end;
+}
+
+void keyboard_buffer_push(SDL_Event *event) {
+    keyboard_buffer[keyboard_buffer_end++] = *event;  // save a copy in the buffer
+
+    // extend the buffer
+    if (keyboard_buffer_end == KEY_BOARD_BUFFER_LENGTH) keyboard_buffer_end = 0;
+
+    // the buffer is already full, so drop from the start
+    if (keyboard_buffer_end == keyboard_buffer_start) keyboard_buffer_start++;
+    if (keyboard_buffer_start == KEY_BOARD_BUFFER_LENGTH) keyboard_buffer_start = 0;
+}
+
+SDL_Event keyboard_buffer_pull() {
+    int pos = keyboard_buffer_start++;
+    if (keyboard_buffer_start == KEY_BOARD_BUFFER_LENGTH) keyboard_buffer_start = 0;
+    return keyboard_buffer[pos];
+}
+
+void clipboard_copy() {
+    char *text = SDL_GetClipboardText();
+    SDL_Event event;
+
+    if (!text) return;
+
+    char *p = text;
+    while (*p) {
+        char ch = *p;
+        if (ch >= 'A' && ch <= 'Z') ch += 'a' - 'A';  // send only lowercase key syms
+        memset(&event, 0, sizeof(SDL_Event));
+
+        event.key.keysym.sym = ch;
+
+        event.type = SDL_KEYDOWN;
+        keyboard_buffer_push(&event);
+        event.type = SDL_KEYUP;
+        keyboard_buffer_push(&event);
+
+        p++;
+    }
+    SDL_free(text);
+}
+
 int main(int argc, char* argv[]) {
+    signal(SIGSEGV, segv_handler);
+
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         printf("Error initializing SDL: %s\n", SDL_GetError());
@@ -83,17 +152,38 @@ int main(int argc, char* argv[]) {
         SDL_Event event;
 
         uint64_t next_frame_ns = nanos() + frame_time_nano;
+        int is_1st_key_event_processed = 0;  // only one key is processed per one iteration to give time to the machine to process it
+
+        while (!keyboard_buffer_empty() && !is_1st_key_event_processed) {
+            event = keyboard_buffer_pull();
+            if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) {
+                is_1st_key_event_processed = keyboard_set_key(keyboard, &event.key, event.type == SDL_KEYDOWN ? 1 : 0);
+            }
+        }
 
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
                 running = false;
             }
 
-            if (event.type == SDL_KEYDOWN) {
-                keyboard_set_key(keyboard, &event.key, 1);
+            if ((event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) && !(event.key.keysym.mod & (KMOD_CTRL | KMOD_ALT))) {
+                if (!is_1st_key_event_processed)
+                    is_1st_key_event_processed = keyboard_set_key(keyboard, &event.key, event.type == SDL_KEYDOWN ? 1 : 0);
+                else
+                    keyboard_buffer_push(&event);
             }
-            if (event.type == SDL_KEYUP) {
-                keyboard_set_key(keyboard, &event.key, 0);
+
+            if (event.type == SDL_KEYDOWN && event.key.keysym.mod & KMOD_CTRL && event.key.keysym.sym == SDLK_v) {
+                clipboard_copy();
+                is_1st_key_event_processed = 1;
+            }
+
+            if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F10) {
+                p._dump_execution = 1;
+                PIA(pia1)->a._dump_read = 1;
+            }
+            if (event.type == SDL_KEYUP && event.key.keysym.sym == SDLK_F10) {
+                p._dump_execution = 0;
             }
         }
 
