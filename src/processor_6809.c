@@ -571,12 +571,12 @@ void __opcode_leau(struct processor_state *p, uint16_t address) {
 
 void __opcode_leax(struct processor_state *p, uint16_t address) {
     p->X = address;
-    p->Z = address == 0 ? 0 : 1;
+    p->Z = address == 0 ? 1 : 0;
 }
 
 void __opcode_leay(struct processor_state *p, uint16_t address) {
     p->Y = address;
-    p->Z = address == 0 ? 0 : 1;
+    p->Z = address == 0 ? 1 : 0;
 }
 
 void __opcode_jmp(struct processor_state *p, uint16_t address) {
