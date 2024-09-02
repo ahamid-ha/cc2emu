@@ -147,17 +147,20 @@ int main(int argc, char* argv[]) {
 
     processor_reset(&p);
 
+    int is_1st_key_event_processed = 0;  // only one key is processed per one iteration to give time to the machine to process it
     while (running) {
         // Handle events
         SDL_Event event;
 
         uint64_t next_frame_ns = nanos() + frame_time_nano;
-        int is_1st_key_event_processed = 0;  // only one key is processed per one iteration to give time to the machine to process it
 
-        while (!keyboard_buffer_empty() && !is_1st_key_event_processed) {
+        if (is_1st_key_event_processed == 4) is_1st_key_event_processed = 0;  // wait for max 4 V. scan to send next key
+        if (is_1st_key_event_processed) is_1st_key_event_processed++;
+
+        while (!keyboard_buffer_empty() && (!is_1st_key_event_processed || keyboard->columns_used == 0xff)) {
             event = keyboard_buffer_pull();
             if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) {
-                is_1st_key_event_processed = keyboard_set_key(keyboard, &event.key, event.type == SDL_KEYDOWN ? 1 : 0);
+                is_1st_key_event_processed += keyboard_set_key(keyboard, &event.key, event.type == SDL_KEYDOWN ? 1 : 0);
             }
         }
 
@@ -167,15 +170,14 @@ int main(int argc, char* argv[]) {
             }
 
             if ((event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) && !(event.key.keysym.mod & (KMOD_CTRL | KMOD_ALT))) {
-                if (!is_1st_key_event_processed)
-                    is_1st_key_event_processed = keyboard_set_key(keyboard, &event.key, event.type == SDL_KEYDOWN ? 1 : 0);
+                if ((!is_1st_key_event_processed || keyboard->columns_used == 0xff))
+                    is_1st_key_event_processed += keyboard_set_key(keyboard, &event.key, event.type == SDL_KEYDOWN ? 1 : 0);
                 else
                     keyboard_buffer_push(&event);
             }
 
             if (event.type == SDL_KEYDOWN && event.key.keysym.mod & KMOD_CTRL && event.key.keysym.sym == SDLK_v) {
                 clipboard_copy();
-                is_1st_key_event_processed = 1;
             }
 
             if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F10) {

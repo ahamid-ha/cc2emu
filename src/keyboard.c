@@ -9,6 +9,8 @@ void _keyboard_column_change_cb(struct mc6821_status *pia, int peripheral_addres
     uint8_t value = 0x7f;
     kb->last_columns_value = columns;
 
+    kb->columns_used |= ~columns;
+
     for (int row=0; row < 7; row++) {
         for (int col=0; col < 8; col++) {
             if (((1 << col) & columns) == 0 && kb->keyboard_keys_status[row][col]) {
@@ -159,12 +161,13 @@ int keyboard_set_key(struct keyboard_status *ks, SDL_KeyboardEvent *event, int i
         kb_map(SDLK_DOWN, 3, 4)
         kb_map(SDLK_UP, 3, 3)
         default:
-            return keyboard_set_char(ks, sym, is_pressed);
+            ret = keyboard_set_char(ks, sym, is_pressed);
     }
 
     if (ret) {
         // force updating the pia
         _keyboard_column_change_cb(ks->pia, 0, ks->last_columns_value, ks);
+        ks->columns_used = 0;
     }
     return ret;
 }
