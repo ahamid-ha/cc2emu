@@ -53,17 +53,27 @@ void _bus_memory_write(struct bus_adaptor *p, uint16_t addr, uint8_t value) {
 }
 
 struct bus_adaptor * bus_create_rom(char *path, uint16_t start) {
-    int size = 8 * 1024;
-    uint8_t *rom_contents = malloc(size);
     FILE *fp = fopen(path, "rb");
     if (!fp) {
         fprintf(stderr, "error reading rom from file %s: %s\n", path, strerror(errno));
         exit(1);
     }
+
+    fseek(fp, 0L, SEEK_END);
+    size_t size = ftell(fp);
+    if (size + start > 0xff00) {
+        fprintf(stderr, "file %s is too big %ld \n", path, size);
+        size = 0xff00l - start;
+        printf("Updated size %ld\n", size);
+    }
+    fseek(fp, 0L, SEEK_SET);
+
+    uint8_t *rom_contents = malloc(size);
+
     size_t remaining = size;
     uint16_t pos = 0;
     while (remaining > 0) {
-        size_t ret = fread(rom_contents + pos, 1, 1024, fp);
+        size_t ret = fread(rom_contents + pos, 1, remaining > 1024 ? 1024: remaining, fp);
         if (ret <=0) {
             fprintf(stderr, "fread() failed: %zu\n", ret);
             exit(EXIT_FAILURE);

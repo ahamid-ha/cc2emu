@@ -4,8 +4,8 @@
 
 #define cycle_nano 1000
 
-// ntsc 23.976 frame / second
-#define frame_time_nano 41708375
+#define fs_time_nano 16700000
+#define hs_time_nano 63500
 
 struct processor_state {
     union {
@@ -44,6 +44,7 @@ struct processor_state {
     int _irq;
     int _firq;
     int _nmi;
+    int _sync;
 };
 
 void processor_init(struct processor_state *p);

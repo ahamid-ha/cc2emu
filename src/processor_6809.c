@@ -628,6 +628,17 @@ void __opcode_orcc(struct processor_state *p, uint16_t address) {
     p->CC = p->CC | data;
 }
 
+void __opcode_sex(struct processor_state *p) {
+    __update_CC_data8(p, p->B);
+    if (p->N) {
+        p->A = 0xFF;
+    }
+}
+
+void __opcode_sync(struct processor_state *p) {
+    p->_sync = 1;
+}
+
 void __opcode_lsr8(struct processor_state *p, uint16_t address) {
     uint8_t data = processor_load_8(p, address);
     p->C = data & 1;
@@ -1043,11 +1054,13 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         op_code_direct(0x0F, 'CLR', 6, __opcode_clr)
 
         op_code(0x12, 'NOP', 2, __opcode_nop)
+        op_code(0x13, 'SYNC', 2, __opcode_sync)
         op_code_relative16(0x16, 'LBRA', 5, __opcode_jmp)
         op_code_relative16(0x17, 'LBSR', 9, __opcode_jsr)
         op_code(0x19, 'DAA', 2, __opcode_daa)
         op_code_immediate8(0x1A, 'ORCC', 3, __opcode_orcc)
         op_code_immediate8(0x1C, 'ANDCC', 3, __opcode_andcc)
+        op_code(0x1D, 'SEX', 1, __opcode_sex)
         op_code_immediate8(0x1E, 'EXG', 8, __opcode_exg)
         op_code_immediate8(0x1F, 'TFR', 6, __opcode_tfr)
 
@@ -1320,7 +1333,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         op_code_extended(0x11BC, 'CMPS', 8, __opcode_sub16, &p->S, 1)
 
         default:
-            printf("Unknown OPCODE %04X\n", opcode);
+            printf("Unknown OPCODE %04X at %04X\n", opcode, p->PC - 1);
             exit(1);
     }
 }
@@ -1328,6 +1341,10 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
 void processor_next_opcode(struct processor_state *p) {
     if (p->_stopped) {
         add_cycles(1);
+        return;
+    }
+    if (p->_sync) {
+        add_cycles(3);
         return;
     }
 
@@ -1399,31 +1416,7 @@ void processor_next_opcode(struct processor_state *p) {
         if (!(opcode == 0x10 || opcode == 0x11)) opcode = opcode_high + opcode;
     }
 
-    // if (org_address >= 0xA1C1 && org_address <= 0xA1F9)
-    //     printf("Execuding %04X opcode %04X\n", org_address, opcode);
     if (p->_dump_execution) printf("Execuding %04X opcode %04X\n", org_address, opcode);
     execute_opcode(p, opcode);
     if (p->_dump_execution) processor_dump(p);
-    // if (org_address >= 0xA1C1 && org_address <= 0xA1F9) {
-    //     processor_dump(p);
-    //     if (org_address == 0xA1F9)
-    //         exit(0);
-    // }
-
-    // if (org_address == 0xA765) {
-    //     exit(0);
-    // }
-
-    // if (org_address == 0xB99C) {
-    //     printf("Printing: {");
-    //     for (int i=1; ; i++){
-    //         uint8_t ch = processor_load_8(p, p->X+i);
-    //         if (ch == 0xd) ch = '\n';
-    //         printf("%c", ch);
-    //         if (ch ==0 || ch == '"') break;
-    //     }
-    //     printf("}");
-    //     processor_dump(p);
-    // }
-
 }

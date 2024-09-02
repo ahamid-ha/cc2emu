@@ -129,6 +129,10 @@ int main(int argc, char* argv[]) {
     struct bus_adaptor *extended_rom = bus_create_rom("roms/extbas11.rom", 0x8000);
     processor_register_bus_adaptor(&p.bus, extended_rom);
 
+    // struct bus_adaptor *cartridge = bus_create_rom("roms/cartridges/Castle Guard (1981) (26-3079) (Tandy).ccc", 0xC000);
+    struct bus_adaptor *cartridge = bus_create_rom("roms/cartridges/Dragon Fire (1984) (26-3098) (Tandy).ccc", 0xC000);
+    processor_register_bus_adaptor(&p.bus, cartridge);
+
     struct bus_adaptor *ram = bus_create_ram(32 * 1024, 0x0000);
     processor_register_bus_adaptor(&p.bus, ram);
     uint8_t *memory_buffer = (uint8_t *)ram->data;
@@ -152,7 +156,7 @@ int main(int argc, char* argv[]) {
         // Handle events
         SDL_Event event;
 
-        uint64_t next_frame_ns = nanos() + frame_time_nano;
+        uint64_t next_frame_ns = nanos() + fs_time_nano;
 
         if (is_1st_key_event_processed == 4) is_1st_key_event_processed = 0;  // wait for max 4 V. scan to send next key
         if (is_1st_key_event_processed) is_1st_key_event_processed++;
@@ -180,6 +184,10 @@ int main(int argc, char* argv[]) {
                 clipboard_copy();
             }
 
+            if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F9) {
+                mc6821_interrupt_1_input(PIA(pia2), 1, 1);
+                mc6821_interrupt_1_input(PIA(pia2), 1, 0);
+            }
             if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F10) {
                 p._dump_execution = 1;
                 PIA(pia1)->a._dump_read = 1;
@@ -190,9 +198,16 @@ int main(int argc, char* argv[]) {
         }
 
         p._nano_time_passed = 0;
-        while (p._nano_time_passed < frame_time_nano) {
+        uint64_t _last_hsync_time = p._nano_time_passed;
+        while (p._nano_time_passed < fs_time_nano) {
             processor_next_opcode(&p);
             p._irq = mc6821_interrupt_state(PIA(pia1));  // TODO: should be done in a better way
+            p._firq = mc6821_interrupt_state(PIA(pia2));  // TODO: should be done in a better way
+
+            if (p._nano_time_passed - _last_hsync_time > hs_time_nano) {
+                p._sync = 0;
+                _last_hsync_time += hs_time_nano;
+            }
         }
 
         // Clear the renderer with a black color
@@ -216,9 +231,10 @@ int main(int argc, char* argv[]) {
             clock_nanosleep(CLOCK_MONOTONIC, 0, &res, NULL);
         }
 
-        // generate an interrupt at every v sync at CB1 pin of PIA1
+        // generate an interrupt at every f-sync at CB1 pin of PIA1
         mc6821_interrupt_1_input(PIA(pia1), 1, 1);
         mc6821_interrupt_1_input(PIA(pia1), 1, 0);
+        p._sync = 0;
     }
 
     // Clean up resources before exiting
