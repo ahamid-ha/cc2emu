@@ -12,7 +12,6 @@ uint8_t mc6821_peripheral_read_register(struct mc6821_peripheral_status *p, int 
         return p->cr;
     }
     if (p->ddr_access) {
-        if (p->_dump_read) printf("******************* Reading register with value %02X\n", p->pr);
         p->irq1 = 0;
         p->irq2 = 0;
         return p->pr;
@@ -48,6 +47,7 @@ void mc6821_write_register(struct mc6821_status *p, uint16_t address, uint8_t va
     int peripheral_address = (address & 0b10 ) >> 1;
     struct mc6821_peripheral_status *ps = peripheral(peripheral_address);
     uint8_t old_output_value = ps->ddr & ps->pr;
+    uint8_t old_cr_c2 = ps->c2_output? ps->c2_enable : 1;
 
     mc6821_peripheral_write_register(ps, address & 1, value);
 
@@ -60,13 +60,18 @@ void mc6821_write_register(struct mc6821_status *p, uint16_t address, uint8_t va
             }
         }
     }
+
+    uint8_t cr_c2 = ps->c2_output? ps->c2_enable : 1;
+    if (p->c2_cb[peripheral_address] && old_cr_c2 != cr_c2) {
+        p->c2_cb[peripheral_address](p, peripheral_address, cr_c2, p->c2_cb_data[peripheral_address]);
+    }
 }
 
 void mc6821_peripheral_input(struct mc6821_status *p, int peripheral_address, uint8_t value, uint8_t mask) {
     struct mc6821_peripheral_status *ps = peripheral(peripheral_address);
     mask = (~ps->ddr) & mask;
     value = value & mask;
-    ps->pr = ps->pr & (~mask);
+    ps->pr = ps->pr & (~mask);  // keep only the bits that aren't part of the change
     ps->pr = ps->pr | value;
 }
 
@@ -117,14 +122,20 @@ int mc6821_interrupt_state(struct mc6821_status *p) {
     return 0;
 }
 
+void mc6821_register_c2_cb(struct mc6821_status *p, int peripheral_address, mc6821_cb cb, void *data) {
+    peripheral_address = peripheral_address & 1;
+    p->c2_cb[peripheral_address] = cb;
+    p->c2_cb_data[peripheral_address] = data;
+}
+
 int mc6821_register_cb(struct mc6821_status *p, int peripheral_address, mc6821_cb cb, void *data) {
     for (int cb_pos=0; cb_pos < MC6821_MAX_CB_COUNT; cb_pos++){
         if (!p->output_change_cb[cb_pos].cb) {
             p->output_change_cb[cb_pos].cb = cb;
             p->output_change_cb[cb_pos].peripheral_address = peripheral_address;
             p->output_change_cb[cb_pos].data = data;
+            return 0;
         }
-        return 0;
     }
 
     return 1;

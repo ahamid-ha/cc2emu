@@ -9,6 +9,8 @@ struct video_status {
     uint8_t mode;
     SDL_Renderer* renderer;
     SDL_Texture* texture;
+
+    int mode_change_count;
 };
 
 struct video_status *video_initialize(struct sam_status *sam, struct mc6821_status *pia, uint8_t *memory, SDL_Renderer* renderer);

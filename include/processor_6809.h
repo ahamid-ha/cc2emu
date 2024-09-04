@@ -45,6 +45,7 @@ struct processor_state {
     int _firq;
     int _nmi;
     int _sync;
+    int _cwai;
 };
 
 void processor_init(struct processor_state *p);

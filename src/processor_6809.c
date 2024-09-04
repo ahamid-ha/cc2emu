@@ -393,6 +393,32 @@ void __opcode_bit8(struct processor_state *p, uint16_t address, uint8_t *reg) {
     __update_CC_data8(p, result);
 }
 
+void __opcode_cwai(struct processor_state *p, uint16_t address) {
+    uint8_t data = processor_load_8(p, address);
+    p->CC = p->CC & data;
+    p->E = 1;
+    p->S -= 2;
+    processor_store_16(p, p->S, p->PC);
+    p->S -= 2;
+    processor_store_16(p, p->S, p->U);
+    p->S -= 2;
+    processor_store_16(p, p->S, p->Y);
+    p->S -= 2;
+    processor_store_16(p, p->S, p->X);
+    p->S--;
+    processor_store_8(p, p->S, p->DP);
+    p->S--;
+    processor_store_8(p, p->S, p->B);
+    p->S--;
+    processor_store_8(p, p->S, p->A);
+    p->S--;
+    processor_store_8(p, p->S, p->CC);
+
+    p->PC = processor_load_16(p, 0xfff6);
+
+    p->_cwai = 1;
+}
+
 void __opcode_mul(struct processor_state *p) {
     p->D = p->A * p->B;
     p->C = p->B & 0x80 ? 1 : 0;
@@ -1054,13 +1080,13 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         op_code_direct(0x0F, 'CLR', 6, __opcode_clr)
 
         op_code(0x12, 'NOP', 2, __opcode_nop)
-        op_code(0x13, 'SYNC', 2, __opcode_sync)
+        op_code(0x13, 'SYNC', 4, __opcode_sync)
         op_code_relative16(0x16, 'LBRA', 5, __opcode_jmp)
         op_code_relative16(0x17, 'LBSR', 9, __opcode_jsr)
         op_code(0x19, 'DAA', 2, __opcode_daa)
         op_code_immediate8(0x1A, 'ORCC', 3, __opcode_orcc)
         op_code_immediate8(0x1C, 'ANDCC', 3, __opcode_andcc)
-        op_code(0x1D, 'SEX', 1, __opcode_sex)
+        op_code(0x1D, 'SEX', 2, __opcode_sex)
         op_code_immediate8(0x1E, 'EXG', 8, __opcode_exg)
         op_code_immediate8(0x1F, 'TFR', 6, __opcode_tfr)
 
@@ -1091,7 +1117,8 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         op_code_immediate8(0x37, 'PULU', 5, __opcode_pulu)
         op_code(0x39, 'RTS', 5, __opcode_rts)
         op_code(0x3A, 'ABX', 3, __opcode_abx)
-        op_code(0x3B, 'RTS', 6, __opcode_rti)
+        op_code(0x3B, 'RTI', 6, __opcode_rti)
+        op_code_immediate8(0x3C, 'CWAI', 20, __opcode_cwai)
         op_code(0x3D, 'MUL', 11, __opcode_mul)
 
         op_code(0x40, 'NEGA', 2, __opcode_neg_reg, &p->A)
@@ -1348,7 +1375,7 @@ void processor_next_opcode(struct processor_state *p) {
         return;
     }
 
-    if (p->_nmi) {
+    if (!p->_cwai && p->_nmi) {
         p->E = 1;
         p->S -= 2;
         processor_store_16(p, p->S, p->PC);
@@ -1372,7 +1399,7 @@ void processor_next_opcode(struct processor_state *p) {
         p->PC = processor_load_16(p, 0xfffc);
         add_cycles(18);
     }
-    if (p->_firq && !p->F) {
+    if (!p->_cwai && p->_firq && !p->F) {
         p->E = 0;
         p->S -= 2;
         processor_store_16(p, p->S, p->PC);
@@ -1383,7 +1410,7 @@ void processor_next_opcode(struct processor_state *p) {
         p->PC = processor_load_16(p, 0xfff6);
         add_cycles(9);
     }
-    if (p->_irq && !p->I) {
+    if (!p->_cwai && p->_irq && !p->I) {
         p->E = 1;
         p->S -= 2;
         processor_store_16(p, p->S, p->PC);
@@ -1405,6 +1432,15 @@ void processor_next_opcode(struct processor_state *p) {
         p->I = 1;
         p->PC = processor_load_16(p, 0xfff8);
         add_cycles(18);
+    }
+
+    if (p->_cwai) {
+        add_cycles(1);
+        if (p->_nmi || p->_firq || p->_irq) {
+            p->_cwai = 0;
+        } else {
+            return;
+        }
     }
 
     uint16_t org_address = p->PC;

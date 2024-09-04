@@ -59,6 +59,7 @@ const unsigned char epd_bitmap_mc6847charset [] = {
 
 #define draw_pixel(x, y, c) pixels[(x) + ((y) * (pitch))] = c
 
+
 void render_graphics(struct video_status *v) {
     uint16_t start_pos = v->sam->F << 9;
     uint8_t *memory = v->memory;
@@ -68,6 +69,12 @@ void render_graphics(struct video_status *v) {
     uint8_t color_bits_mask = v->mode & 0b10 ? 0b10000000 : 0b11000000;
     uint8_t mode = (v->mode >> 1) & 7;
     int w,h;
+
+    if (v->mode_change_count > 2) {
+        // mode changes during scan aren't supported yet
+        v->mode_change_count = 0;
+        css = 4;
+    }
 
     switch(mode) {
         case 0:
@@ -230,6 +237,7 @@ void video_render(struct video_status *v) {
 void _video_mode_change_cb(struct mc6821_status *pia, int peripheral_address, uint8_t value, void *data) {
     struct video_status *v = (struct video_status *)data;
     v->mode = value >> 3;
+    v->mode_change_count++;
 }
 
 struct video_status *video_initialize(struct sam_status *sam, struct mc6821_status *pia, uint8_t *memory, SDL_Renderer* renderer) {

@@ -10,6 +10,7 @@
 #include "processor_6809.h"
 #include "keyboard.h"
 #include "video.h"
+#include "adc.h"
 
 
 #define SEC_TO_NS(sec) ((sec)*1000000000)
@@ -129,8 +130,10 @@ int main(int argc, char* argv[]) {
     struct bus_adaptor *extended_rom = bus_create_rom("roms/extbas11.rom", 0x8000);
     processor_register_bus_adaptor(&p.bus, extended_rom);
 
-    // struct bus_adaptor *cartridge = bus_create_rom("roms/cartridges/Castle Guard (1981) (26-3079) (Tandy).ccc", 0xC000);
     struct bus_adaptor *cartridge = bus_create_rom("roms/cartridges/Dragon Fire (1984) (26-3098) (Tandy).ccc", 0xC000);
+    // struct bus_adaptor *cartridge = bus_create_rom("roms/cartridges/Demolition Derby (1984) (26-3044) (Tandy).ccc", 0xC000);
+    // struct bus_adaptor *cartridge = bus_create_rom("roms/cartridges/Castle Guard (1981) (26-3079) (Tandy).ccc", 0xC000);
+    // struct bus_adaptor *cartridge = bus_create_rom("roms/cartridges/Space Assault (1981) (26-3060) (Tandy).ccc", 0xC000);
     processor_register_bus_adaptor(&p.bus, cartridge);
 
     struct bus_adaptor *ram = bus_create_ram(32 * 1024, 0x0000);
@@ -149,16 +152,19 @@ int main(int argc, char* argv[]) {
     struct keyboard_status *keyboard = keyboard_initialize(PIA(pia1));
     struct video_status *video = video_initialize(SAM(sam), PIA(pia2), memory_buffer, renderer);
 
+    struct adc_status *adc = adc_initialize(PIA(pia1), PIA(pia2));
+
     processor_reset(&p);
 
     int is_1st_key_event_processed = 0;  // only one key is processed per one iteration to give time to the machine to process it
+    int joy_emulation = 0;
     while (running) {
         // Handle events
         SDL_Event event;
 
         uint64_t next_frame_ns = nanos() + fs_time_nano;
 
-        if (is_1st_key_event_processed == 4) is_1st_key_event_processed = 0;  // wait for max 4 V. scan to send next key
+        if (is_1st_key_event_processed == 16) is_1st_key_event_processed = 0;  // wait for max 4 V. scan to send next key
         if (is_1st_key_event_processed) is_1st_key_event_processed++;
 
         while (!keyboard_buffer_empty() && (!is_1st_key_event_processed || keyboard->columns_used == 0xff)) {
@@ -173,11 +179,31 @@ int main(int argc, char* argv[]) {
                 running = false;
             }
 
-            if ((event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) && !(event.key.keysym.mod & (KMOD_CTRL | KMOD_ALT))) {
-                if ((!is_1st_key_event_processed || keyboard->columns_used == 0xff))
-                    is_1st_key_event_processed += keyboard_set_key(keyboard, &event.key, event.type == SDL_KEYDOWN ? 1 : 0);
-                else
-                    keyboard_buffer_push(&event);
+            if (joy_emulation &&
+                    (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) &&
+                    !(event.key.keysym.mod & (KMOD_CTRL | KMOD_ALT)) &&
+                    (event.key.keysym.sym == SDLK_LEFT || event.key.keysym.sym == SDLK_RIGHT ||
+                    event.key.keysym.sym == SDLK_UP || event.key.keysym.sym == SDLK_DOWN || event.key.keysym.sym == SDLK_SPACE || event.key.keysym.sym == SDLK_RETURN)
+                ) {
+                    switch(event.key.keysym.sym) {
+                        case SDLK_LEFT: adc->input_joy_2 = event.type == SDL_KEYDOWN ? 1 : 2.5; break;
+                        case SDLK_RIGHT: adc->input_joy_2 = event.type == SDL_KEYDOWN ? 4 : 2.5; break;
+                        case SDLK_UP: adc->input_joy_3 = event.type == SDL_KEYDOWN ? 1 : 2.5; break;
+                        case SDLK_DOWN: adc->input_joy_3 = event.type == SDL_KEYDOWN ? 4 : 2.5; break;
+                        case SDLK_RETURN:
+                        case SDLK_SPACE:
+                            if (event.type == SDL_KEYDOWN) mc6821_peripheral_input(PIA(pia1), 0, 0b00, 0b10);
+                            else mc6821_peripheral_input(PIA(pia1), 0, 0b10, 0b10);
+                            break;
+                    }
+                    // printf("event.key.keysym.sym=%d \n", event.key.keysym.sym);
+            } else {
+                if ((event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) && !(event.key.keysym.mod & (KMOD_CTRL | KMOD_ALT))) {
+                    if ((!is_1st_key_event_processed || keyboard->columns_used == 0xff))
+                        is_1st_key_event_processed += keyboard_set_key(keyboard, &event.key, event.type == SDL_KEYDOWN ? 1 : 0);
+                    else
+                        keyboard_buffer_push(&event);
+                }
             }
 
             if (event.type == SDL_KEYDOWN && event.key.keysym.mod & KMOD_CTRL && event.key.keysym.sym == SDLK_v) {
@@ -190,10 +216,13 @@ int main(int argc, char* argv[]) {
             }
             if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F10) {
                 p._dump_execution = 1;
-                PIA(pia1)->a._dump_read = 1;
             }
             if (event.type == SDL_KEYUP && event.key.keysym.sym == SDLK_F10) {
                 p._dump_execution = 0;
+            }
+            if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F5) {
+                joy_emulation = !joy_emulation;
+                printf("Set Joy Emulator %d\n", joy_emulation);
             }
         }
 
@@ -207,6 +236,8 @@ int main(int argc, char* argv[]) {
             if (p._nano_time_passed - _last_hsync_time > hs_time_nano) {
                 p._sync = 0;
                 _last_hsync_time += hs_time_nano;
+                mc6821_interrupt_1_input(PIA(pia1), 0, 1);
+                mc6821_interrupt_1_input(PIA(pia1), 0, 0);
             }
         }
 
