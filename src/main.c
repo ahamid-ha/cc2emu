@@ -4,7 +4,8 @@
 #include <signal.h>
 #include <unistd.h>
 #include <string.h>
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
 #include <stdbool.h>
 #include <time.h>
 #include "processor_6809.h"
@@ -81,11 +82,11 @@ void clipboard_copy() {
         if (ch >= 'A' && ch <= 'Z') ch += 'a' - 'A';  // send only lowercase key syms
         memset(&event, 0, sizeof(SDL_Event));
 
-        event.key.keysym.sym = ch;
+        event.key.key = ch;
 
-        event.type = SDL_KEYDOWN;
+        event.type = SDL_EVENT_KEY_DOWN;
         keyboard_buffer_push(&event);
-        event.type = SDL_KEYUP;
+        event.type = SDL_EVENT_KEY_UP;
         keyboard_buffer_push(&event);
 
         p++;
@@ -97,13 +98,13 @@ int main(int argc, char* argv[]) {
     signal(SIGSEGV, segv_handler);
 
     // Initialize SDL
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
         printf("Error initializing SDL: %s\n", SDL_GetError());
         return -1;
     }
 
     // Create a window and renderer
-    SDL_Window* window = SDL_CreateWindow("Simple Graphics", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 256 * 4 + 40, 192 * 4 + 40, SDL_WINDOW_SHOWN);
+    SDL_Window* window = SDL_CreateWindow("Emulator", 256 * 4 + 40, 192 * 4 + 40, 0);
     if (!window) {
         printf("Failed to create window: %s\n", SDL_GetError());
         SDL_Quit();
@@ -111,7 +112,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Renderer for drawing graphics
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    SDL_Renderer* renderer = SDL_CreateRenderer(window, NULL);
     if (!renderer) {
         printf("Failed to create renderer: %s\n", SDL_GetError());
         SDL_DestroyWindow(window);
@@ -158,6 +159,7 @@ int main(int argc, char* argv[]) {
 
     int is_1st_key_event_processed = 0;  // only one key is processed per one iteration to give time to the machine to process it
     int joy_emulation = 0;
+    int joy_emulation_side = 1;  // 0: left, 1: right
     while (running) {
         // Handle events
         SDL_Event event;
@@ -169,58 +171,84 @@ int main(int argc, char* argv[]) {
 
         while (!keyboard_buffer_empty() && (!is_1st_key_event_processed || keyboard->columns_used == 0xff)) {
             event = keyboard_buffer_pull();
-            if (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) {
-                is_1st_key_event_processed += keyboard_set_key(keyboard, &event.key, event.type == SDL_KEYDOWN ? 1 : 0);
+            if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
+                is_1st_key_event_processed += keyboard_set_key(keyboard, &event.key, event.type == SDL_EVENT_KEY_DOWN ? 1 : 0);
             }
         }
 
         while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_QUIT) {
+            if (event.type == SDL_EVENT_QUIT) {
                 running = false;
             }
 
             if (joy_emulation &&
-                    (event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) &&
-                    !(event.key.keysym.mod & (KMOD_CTRL | KMOD_ALT)) &&
-                    (event.key.keysym.sym == SDLK_LEFT || event.key.keysym.sym == SDLK_RIGHT ||
-                    event.key.keysym.sym == SDLK_UP || event.key.keysym.sym == SDLK_DOWN || event.key.keysym.sym == SDLK_SPACE || event.key.keysym.sym == SDLK_RETURN)
+                    (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) &&
+                    !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT)) &&
+                    (event.key.key == SDLK_LEFT || event.key.key == SDLK_RIGHT ||
+                    event.key.key == SDLK_UP || event.key.key == SDLK_DOWN ||
+                    event.key.key == SDLK_SPACE || event.key.key == SDLK_RETURN ||
+                    event.key.key == '[' || event.key.key == ']'
+                )
                 ) {
-                    switch(event.key.keysym.sym) {
-                        case SDLK_LEFT: adc->input_joy_2 = event.type == SDL_KEYDOWN ? 1 : 2.5; break;
-                        case SDLK_RIGHT: adc->input_joy_2 = event.type == SDL_KEYDOWN ? 4 : 2.5; break;
-                        case SDLK_UP: adc->input_joy_3 = event.type == SDL_KEYDOWN ? 1 : 2.5; break;
-                        case SDLK_DOWN: adc->input_joy_3 = event.type == SDL_KEYDOWN ? 4 : 2.5; break;
-                        case SDLK_RETURN:
-                        case SDLK_SPACE:
-                            if (event.type == SDL_KEYDOWN) mc6821_peripheral_input(PIA(pia1), 0, 0b00, 0b10);
-                            else mc6821_peripheral_input(PIA(pia1), 0, 0b10, 0b10);
-                            break;
+                    if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == '[') {
+                        printf("Left joystick\n");
+                        joy_emulation_side = 0;
                     }
-                    // printf("event.key.keysym.sym=%d \n", event.key.keysym.sym);
+                    if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == ']') {
+                        printf("Right joystick\n");
+                        joy_emulation_side = 1;
+                    }
+                    if (joy_emulation_side == 1) {
+                        switch(event.key.key) {
+                            case SDLK_LEFT: adc->input_joy_2 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
+                            case SDLK_RIGHT: adc->input_joy_2 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
+                            case SDLK_UP: adc->input_joy_3 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
+                            case SDLK_DOWN: adc->input_joy_3 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
+                            case SDLK_RETURN:
+                            case SDLK_SPACE:
+                                if (event.type == SDL_EVENT_KEY_DOWN) mc6821_peripheral_input(PIA(pia1), 0, 0b00, 0b10);
+                                else mc6821_peripheral_input(PIA(pia1), 0, 0b10, 0b10);
+                                break;
+                        }
+                    } else {
+                        switch(event.key.key) {
+                            // left
+                            case SDLK_LEFT: adc->input_joy_0 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
+                            case SDLK_RIGHT: adc->input_joy_0 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
+                            case SDLK_UP: adc->input_joy_1 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
+                            case SDLK_DOWN: adc->input_joy_1 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
+                            case SDLK_RETURN:
+                            case SDLK_SPACE:
+                                if (event.type == SDL_EVENT_KEY_DOWN) mc6821_peripheral_input(PIA(pia1), 0, 0b0, 0b1);
+                                else mc6821_peripheral_input(PIA(pia1), 0, 0b1, 0b1);
+                                break;
+                        }
+                    }
+                    // printf("event.key.key=%d \n", event.key.key);
             } else {
-                if ((event.type == SDL_KEYDOWN || event.type == SDL_KEYUP) && !(event.key.keysym.mod & (KMOD_CTRL | KMOD_ALT))) {
+                if ((event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) && !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT))) {
                     if ((!is_1st_key_event_processed || keyboard->columns_used == 0xff))
-                        is_1st_key_event_processed += keyboard_set_key(keyboard, &event.key, event.type == SDL_KEYDOWN ? 1 : 0);
+                        is_1st_key_event_processed += keyboard_set_key(keyboard, &event.key, event.type == SDL_EVENT_KEY_DOWN ? 1 : 0);
                     else
                         keyboard_buffer_push(&event);
                 }
             }
 
-            if (event.type == SDL_KEYDOWN && event.key.keysym.mod & KMOD_CTRL && event.key.keysym.sym == SDLK_v) {
+            if (event.type == SDL_EVENT_KEY_DOWN && event.key.mod & SDL_KMOD_CTRL && event.key.key == SDLK_V) {
                 clipboard_copy();
             }
 
-            if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F9) {
+            if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F9) {
                 mc6821_interrupt_1_input(PIA(pia2), 1, 1);
                 mc6821_interrupt_1_input(PIA(pia2), 1, 0);
             }
-            if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F10) {
+            if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F10) {
                 p._dump_execution = 1;
             }
-            if (event.type == SDL_KEYUP && event.key.keysym.sym == SDLK_F10) {
+            if (event.type == SDL_EVENT_KEY_UP && event.key.key == SDLK_F10) {
                 p._dump_execution = 0;
             }
-            if (event.type == SDL_KEYDOWN && event.key.keysym.sym == SDLK_F5) {
+            if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F5) {
                 joy_emulation = !joy_emulation;
                 printf("Set Joy Emulator %d\n", joy_emulation);
             }

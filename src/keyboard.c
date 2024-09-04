@@ -1,6 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
-#include <SDL2/SDL.h>
+#include <SDL3/SDL.h>
 #include "keyboard.h"
 
 
@@ -91,32 +91,32 @@ int keyboard_set_char(struct keyboard_status *ks, int sym, int is_pressed) {
 
         kb_map_unshifted('@', 0, 0)
 
-        kb_map(SDLK_z, 3, 2)
-        kb_map(SDLK_y, 3, 1)
-        kb_map(SDLK_x, 3, 0)
-        kb_map(SDLK_w, 2, 7)
-        kb_map(SDLK_v, 2, 6)
-        kb_map(SDLK_u, 2, 5)
-        kb_map(SDLK_t, 2, 4)
-        kb_map(SDLK_s, 2, 3)
-        kb_map(SDLK_r, 2, 2)
-        kb_map(SDLK_q, 2, 1)
-        kb_map(SDLK_p, 2, 0)
-        kb_map(SDLK_o, 1, 7)
-        kb_map(SDLK_n, 1, 6)
-        kb_map(SDLK_m, 1, 5)
-        kb_map(SDLK_l, 1, 4)
-        kb_map(SDLK_k, 1, 3)
-        kb_map(SDLK_j, 1, 2)
-        kb_map(SDLK_i, 1, 1)
-        kb_map(SDLK_h, 1, 0)
-        kb_map(SDLK_g, 0, 7)
-        kb_map(SDLK_f, 0, 6)
-        kb_map(SDLK_e, 0, 5)
-        kb_map(SDLK_d, 0, 4)
-        kb_map(SDLK_c, 0, 3)
-        kb_map(SDLK_b, 0, 2)
-        kb_map(SDLK_a, 0, 1)
+        kb_map(SDLK_Z, 3, 2)
+        kb_map(SDLK_Y, 3, 1)
+        kb_map(SDLK_X, 3, 0)
+        kb_map(SDLK_W, 2, 7)
+        kb_map(SDLK_V, 2, 6)
+        kb_map(SDLK_U, 2, 5)
+        kb_map(SDLK_T, 2, 4)
+        kb_map(SDLK_S, 2, 3)
+        kb_map(SDLK_R, 2, 2)
+        kb_map(SDLK_Q, 2, 1)
+        kb_map(SDLK_P, 2, 0)
+        kb_map(SDLK_O, 1, 7)
+        kb_map(SDLK_N, 1, 6)
+        kb_map(SDLK_M, 1, 5)
+        kb_map(SDLK_L, 1, 4)
+        kb_map(SDLK_K, 1, 3)
+        kb_map(SDLK_J, 1, 2)
+        kb_map(SDLK_I, 1, 1)
+        kb_map(SDLK_H, 1, 0)
+        kb_map(SDLK_G, 0, 7)
+        kb_map(SDLK_F, 0, 6)
+        kb_map(SDLK_E, 0, 5)
+        kb_map(SDLK_D, 0, 4)
+        kb_map(SDLK_C, 0, 3)
+        kb_map(SDLK_B, 0, 2)
+        kb_map(SDLK_A, 0, 1)
 
         kb_map(SDLK_RETURN, 6, 0)
         kb_map('\n', 6, 0)
@@ -126,10 +126,10 @@ int keyboard_set_char(struct keyboard_status *ks, int sym, int is_pressed) {
     return ret;
 }
 
-#define kb_map_symbol(sym, unshifted, shifted) case sym: if (event->keysym.mod & KMOD_SHIFT) ret=keyboard_set_char(ks, shifted, is_pressed); else ret=keyboard_set_char(ks, unshifted, is_pressed); break;
+#define kb_map_symbol(sym, unshifted, shifted) case sym: if (event->mod & SDL_KMOD_SHIFT) ret=keyboard_set_char(ks, shifted, is_pressed); else ret=keyboard_set_char(ks, unshifted, is_pressed); break;
 
 int keyboard_set_key(struct keyboard_status *ks, SDL_KeyboardEvent *event, int is_pressed) {
-    int sym = event->keysym.sym;
+    int sym = event->key;
     int ret = 0;
 
     switch(sym) {
@@ -144,7 +144,7 @@ int keyboard_set_key(struct keyboard_status *ks, SDL_KeyboardEvent *event, int i
         kb_map_symbol(SDLK_PERIOD, '.', '>')
         kb_map_symbol(SDLK_COMMA, ',', '<')
         kb_map_symbol(SDLK_SEMICOLON, ';', ':')
-        kb_map_symbol(SDLK_QUOTE, '\'', '"')
+        kb_map_symbol(SDLK_APOSTROPHE, '\'', '"')
         kb_map_symbol(SDLK_9, '9', '(')
         kb_map_symbol(SDLK_8, '8', '*')
         kb_map_symbol(SDLK_7, '7', '&')

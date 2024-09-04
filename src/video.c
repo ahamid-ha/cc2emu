@@ -1,6 +1,7 @@
 #include "video.h"
 #include "mc6821.h"
 #include "sam.h"
+#include <stdlib.h>
 
 #define COLOR_GREEN 0x1cd510ff
 #define COLOR_YELLOW 0xe2db0fff
@@ -70,10 +71,10 @@ void render_graphics(struct video_status *v) {
     uint8_t mode = (v->mode >> 1) & 7;
     int w,h;
 
-    if (v->mode_change_count > 2) {
+    if (v->mode_change_count > 1) {
         // mode changes during scan aren't supported yet
         v->mode_change_count = 0;
-        css = 4;
+        css = 0;
     }
 
     switch(mode) {
@@ -134,13 +135,13 @@ void render_graphics(struct video_status *v) {
         }
     }
 
-    SDL_Rect src = {
+    SDL_FRect src = {
         .h = h,
         .w = w,
         .x = 0,
         .y = 0,
     };
-    SDL_Rect dest = {
+    SDL_FRect dest = {
         .h = 192 * 4,
         .w = 256 * 4,
         .x = 20,
@@ -148,7 +149,7 @@ void render_graphics(struct video_status *v) {
     };
 
     SDL_UnlockTexture(v->texture);
-    SDL_RenderCopy(v->renderer, v->texture, &src, &dest);
+    SDL_RenderTexture(v->renderer, v->texture, &src, &dest);
 }
 
 void render_text(struct video_status *v) {
@@ -214,7 +215,7 @@ void render_text(struct video_status *v) {
         }
     }
 
-    SDL_Rect dest = {
+    SDL_FRect dest = {
         .h = 192 * 4,
         .w = 256 * 4,
         .x = 20,
@@ -222,7 +223,7 @@ void render_text(struct video_status *v) {
     };
 
     SDL_UnlockTexture(v->texture);
-    SDL_RenderCopy(v->renderer, v->texture, NULL, &dest);
+    SDL_RenderTexture(v->renderer, v->texture, NULL, &dest);
     // SDL_RenderCopy(v->renderer, v->texture, NULL, NULL);
 }
 
