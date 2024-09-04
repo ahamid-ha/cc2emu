@@ -14,6 +14,24 @@
 #include "adc.h"
 
 
+struct {
+    SDL_Window* window;
+    SDL_Renderer* renderer;
+
+    struct processor_state p;
+    struct bus_adaptor *basic_rom;
+    struct bus_adaptor *extended_rom;
+    struct bus_adaptor *cartridg;
+    struct bus_adaptor *ram;
+    struct bus_adaptor *pia1;
+    struct bus_adaptor *pia2;
+    struct bus_adaptor *sam;
+    struct keyboard_status *keyboard;
+    struct video_status *video;
+    struct adc_status *adc;
+}machine;
+
+
 #define SEC_TO_NS(sec) ((sec)*1000000000)
 uint64_t nanos()
 {
@@ -34,13 +52,6 @@ void segv_handler(int sig) {
   fprintf(stderr, "Error: signal %d:\n", sig);
   backtrace_symbols_fd(array, size, STDERR_FILENO);
   exit(1);
-}
-
-int main2(int argc, char* argv[]) {
-    uint8_t a= 100;
-    uint8_t b= 100;
-    uint16_t num = a * b;
-    printf("value = %d\n", num);
 }
 
 #define KEY_BOARD_BUFFER_LENGTH 2000
@@ -94,6 +105,23 @@ void clipboard_copy() {
     SDL_free(text);
 }
 
+static void SDLCALL rom_selection_cb(void* data, const char* const* filelist, int filter)
+{
+    if (!filelist) {
+        fprintf(stderr, "An error occured: %s", SDL_GetError());
+        return;
+    } else if (!*filelist) {
+        return;
+    }
+
+    struct bus_adaptor *cartridge=(struct bus_adaptor *)data;
+    const char *rom_path = *filelist;
+    bus_load_rom(cartridge, rom_path);
+
+    mc6821_interrupt_1_input(PIA(machine.pia2), 1, 1);
+    mc6821_interrupt_1_input(PIA(machine.pia2), 1, 0);
+}
+
 int main(int argc, char* argv[]) {
     signal(SIGSEGV, segv_handler);
 
@@ -104,18 +132,18 @@ int main(int argc, char* argv[]) {
     }
 
     // Create a window and renderer
-    SDL_Window* window = SDL_CreateWindow("Emulator", 256 * 4 + 40, 192 * 4 + 40, 0);
-    if (!window) {
+    machine.window = SDL_CreateWindow("Emulator", 256 * 4 + 40, 192 * 4 + 40, 0);
+    if (!machine.window) {
         printf("Failed to create window: %s\n", SDL_GetError());
         SDL_Quit();
         return -1;
     }
 
     // Renderer for drawing graphics
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, NULL);
-    if (!renderer) {
+    machine.renderer = SDL_CreateRenderer(machine.window, NULL);
+    if (!machine.renderer) {
         printf("Failed to create renderer: %s\n", SDL_GetError());
-        SDL_DestroyWindow(window);
+        SDL_DestroyWindow(machine.window);
         SDL_Quit();
         return -1;
     }
@@ -125,35 +153,34 @@ int main(int argc, char* argv[]) {
     struct processor_state p;
     processor_init(&p);
 
-    struct bus_adaptor *basic_rom = bus_create_rom("roms/BASIC.ROM", 0xA000);
+    struct bus_adaptor *basic_rom = bus_create_rom(0xA000);
+    bus_load_rom(basic_rom, "roms/BASIC.ROM");
     processor_register_bus_adaptor(&p.bus, basic_rom);
 
-    struct bus_adaptor *extended_rom = bus_create_rom("roms/extbas11.rom", 0x8000);
+    struct bus_adaptor *extended_rom = bus_create_rom(0x8000);
+    bus_load_rom(extended_rom, "roms/extbas11.rom");
     processor_register_bus_adaptor(&p.bus, extended_rom);
 
-    struct bus_adaptor *cartridge = bus_create_rom("roms/cartridges/Dragon Fire (1984) (26-3098) (Tandy).ccc", 0xC000);
-    // struct bus_adaptor *cartridge = bus_create_rom("roms/cartridges/Demolition Derby (1984) (26-3044) (Tandy).ccc", 0xC000);
-    // struct bus_adaptor *cartridge = bus_create_rom("roms/cartridges/Castle Guard (1981) (26-3079) (Tandy).ccc", 0xC000);
-    // struct bus_adaptor *cartridge = bus_create_rom("roms/cartridges/Space Assault (1981) (26-3060) (Tandy).ccc", 0xC000);
+    struct bus_adaptor *cartridge = bus_create_rom(0xC000);
     processor_register_bus_adaptor(&p.bus, cartridge);
 
-    struct bus_adaptor *ram = bus_create_ram(32 * 1024, 0x0000);
-    processor_register_bus_adaptor(&p.bus, ram);
-    uint8_t *memory_buffer = (uint8_t *)ram->data;
+    machine.ram = bus_create_ram(32 * 1024, 0x0000);
+    processor_register_bus_adaptor(&p.bus, machine.ram);
+    uint8_t *memory_buffer = (uint8_t *)machine.ram->data;
 
-    struct bus_adaptor *pia1 = bus_create_pia1();
-    processor_register_bus_adaptor(&p.bus, pia1);
+    machine.pia1 = bus_create_pia1();
+    processor_register_bus_adaptor(&p.bus, machine.pia1);
 
-    struct bus_adaptor *pia2 = bus_create_pia2();
-    processor_register_bus_adaptor(&p.bus, pia2);
+    machine.pia2 = bus_create_pia2();
+    processor_register_bus_adaptor(&p.bus, machine.pia2);
 
-    struct bus_adaptor *sam = bus_create_sam();
-    processor_register_bus_adaptor(&p.bus, sam);
+    machine.sam = bus_create_sam();
+    processor_register_bus_adaptor(&p.bus, machine.sam);
 
-    struct keyboard_status *keyboard = keyboard_initialize(PIA(pia1));
-    struct video_status *video = video_initialize(SAM(sam), PIA(pia2), memory_buffer, renderer);
+    machine.keyboard = keyboard_initialize(PIA(machine.pia1));
+    machine.video = video_initialize(SAM(machine.sam), PIA(machine.pia2), memory_buffer, machine.renderer);
 
-    struct adc_status *adc = adc_initialize(PIA(pia1), PIA(pia2));
+    machine.adc = adc_initialize(PIA(machine.pia1), PIA(machine.pia2));
 
     processor_reset(&p);
 
@@ -169,10 +196,10 @@ int main(int argc, char* argv[]) {
         if (is_1st_key_event_processed == 16) is_1st_key_event_processed = 0;  // wait for max 4 V. scan to send next key
         if (is_1st_key_event_processed) is_1st_key_event_processed++;
 
-        while (!keyboard_buffer_empty() && (!is_1st_key_event_processed || keyboard->columns_used == 0xff)) {
+        while (!keyboard_buffer_empty() && (!is_1st_key_event_processed || machine.keyboard->columns_used == 0xff)) {
             event = keyboard_buffer_pull();
             if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
-                is_1st_key_event_processed += keyboard_set_key(keyboard, &event.key, event.type == SDL_EVENT_KEY_DOWN ? 1 : 0);
+                is_1st_key_event_processed += keyboard_set_key(machine.keyboard, &event.key, event.type == SDL_EVENT_KEY_DOWN ? 1 : 0);
             }
         }
 
@@ -200,35 +227,35 @@ int main(int argc, char* argv[]) {
                     }
                     if (joy_emulation_side == 1) {
                         switch(event.key.key) {
-                            case SDLK_LEFT: adc->input_joy_2 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
-                            case SDLK_RIGHT: adc->input_joy_2 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
-                            case SDLK_UP: adc->input_joy_3 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
-                            case SDLK_DOWN: adc->input_joy_3 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
+                            case SDLK_LEFT: machine.adc->input_joy_2 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
+                            case SDLK_RIGHT: machine.adc->input_joy_2 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
+                            case SDLK_UP: machine.adc->input_joy_3 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
+                            case SDLK_DOWN: machine.adc->input_joy_3 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
                             case SDLK_RETURN:
                             case SDLK_SPACE:
-                                if (event.type == SDL_EVENT_KEY_DOWN) mc6821_peripheral_input(PIA(pia1), 0, 0b00, 0b10);
-                                else mc6821_peripheral_input(PIA(pia1), 0, 0b10, 0b10);
+                                if (event.type == SDL_EVENT_KEY_DOWN) mc6821_peripheral_input(PIA(machine.pia1), 0, 0b00, 0b10);
+                                else mc6821_peripheral_input(PIA(machine.pia1), 0, 0b10, 0b10);
                                 break;
                         }
                     } else {
                         switch(event.key.key) {
                             // left
-                            case SDLK_LEFT: adc->input_joy_0 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
-                            case SDLK_RIGHT: adc->input_joy_0 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
-                            case SDLK_UP: adc->input_joy_1 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
-                            case SDLK_DOWN: adc->input_joy_1 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
+                            case SDLK_LEFT: machine.adc->input_joy_0 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
+                            case SDLK_RIGHT: machine.adc->input_joy_0 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
+                            case SDLK_UP: machine.adc->input_joy_1 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
+                            case SDLK_DOWN: machine.adc->input_joy_1 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
                             case SDLK_RETURN:
                             case SDLK_SPACE:
-                                if (event.type == SDL_EVENT_KEY_DOWN) mc6821_peripheral_input(PIA(pia1), 0, 0b0, 0b1);
-                                else mc6821_peripheral_input(PIA(pia1), 0, 0b1, 0b1);
+                                if (event.type == SDL_EVENT_KEY_DOWN) mc6821_peripheral_input(PIA(machine.pia1), 0, 0b0, 0b1);
+                                else mc6821_peripheral_input(PIA(machine.pia1), 0, 0b1, 0b1);
                                 break;
                         }
                     }
                     // printf("event.key.key=%d \n", event.key.key);
             } else {
                 if ((event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) && !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT))) {
-                    if ((!is_1st_key_event_processed || keyboard->columns_used == 0xff))
-                        is_1st_key_event_processed += keyboard_set_key(keyboard, &event.key, event.type == SDL_EVENT_KEY_DOWN ? 1 : 0);
+                    if ((!is_1st_key_event_processed || machine.keyboard->columns_used == 0xff))
+                        is_1st_key_event_processed += keyboard_set_key(machine.keyboard, &event.key, event.type == SDL_EVENT_KEY_DOWN ? 1 : 0);
                     else
                         keyboard_buffer_push(&event);
                 }
@@ -239,8 +266,7 @@ int main(int argc, char* argv[]) {
             }
 
             if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F9) {
-                mc6821_interrupt_1_input(PIA(pia2), 1, 1);
-                mc6821_interrupt_1_input(PIA(pia2), 1, 0);
+                SDL_ShowOpenFileDialog(rom_selection_cb, cartridge, machine.window, NULL, 0, "roms/cartridges", false);
             }
             if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F10) {
                 p._dump_execution = 1;
@@ -258,25 +284,25 @@ int main(int argc, char* argv[]) {
         uint64_t _last_hsync_time = p._nano_time_passed;
         while (p._nano_time_passed < fs_time_nano) {
             processor_next_opcode(&p);
-            p._irq = mc6821_interrupt_state(PIA(pia1));  // TODO: should be done in a better way
-            p._firq = mc6821_interrupt_state(PIA(pia2));  // TODO: should be done in a better way
+            p._irq = mc6821_interrupt_state(PIA(machine.pia1));  // TODO: should be done in a better way
+            p._firq = mc6821_interrupt_state(PIA(machine.pia2));  // TODO: should be done in a better way
 
             if (p._nano_time_passed - _last_hsync_time > hs_time_nano) {
                 p._sync = 0;
                 _last_hsync_time += hs_time_nano;
-                mc6821_interrupt_1_input(PIA(pia1), 0, 1);
-                mc6821_interrupt_1_input(PIA(pia1), 0, 0);
+                mc6821_interrupt_1_input(PIA(machine.pia1), 0, 1);
+                mc6821_interrupt_1_input(PIA(machine.pia1), 0, 0);
             }
         }
 
         // Clear the renderer with a black color
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-        SDL_RenderClear(renderer);
+        SDL_SetRenderDrawColor(machine.renderer, 0, 0, 0, 255);
+        SDL_RenderClear(machine.renderer);
 
-        video_render(video);
+        video_render(machine.video);
 
         // Update the renderer
-        SDL_RenderPresent(renderer);
+        SDL_RenderPresent(machine.renderer);
 
         // Cap at 60 FPS to avoid excessive CPU usage
         SDL_Delay(1000 / 60);
@@ -290,15 +316,15 @@ int main(int argc, char* argv[]) {
             clock_nanosleep(CLOCK_MONOTONIC, 0, &res, NULL);
         }
 
-        // generate an interrupt at every f-sync at CB1 pin of PIA1
-        mc6821_interrupt_1_input(PIA(pia1), 1, 1);
-        mc6821_interrupt_1_input(PIA(pia1), 1, 0);
+        // generate an interrupt at every f-sync at CB1 pin of machine.PIA1
+        mc6821_interrupt_1_input(PIA(machine.pia1), 1, 1);
+        mc6821_interrupt_1_input(PIA(machine.pia1), 1, 0);
         p._sync = 0;
     }
 
     // Clean up resources before exiting
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
+    SDL_DestroyRenderer(machine.renderer);
+    SDL_DestroyWindow(machine.window);
     SDL_Quit();
 
     return 0;

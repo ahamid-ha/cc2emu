@@ -44,31 +44,53 @@ void processor_register_bus_adaptor(struct bus_register *b, struct bus_adaptor *
 
 uint8_t _bus_memory_read(struct bus_adaptor *p, uint16_t addr) {
     uint8_t *data = (uint8_t *)p->data;
+    if (!data) {
+        return 0;
+    }
     return data[addr];
 }
 
 void _bus_memory_write(struct bus_adaptor *p, uint16_t addr, uint8_t value) {
     uint8_t *data = (uint8_t *)p->data;
+    if (!data) {
+        return;
+    }
     data[addr] = value;
 }
 
-struct bus_adaptor * bus_create_rom(char *path, uint16_t start) {
+struct bus_adaptor * bus_create_rom(uint16_t start) {
+    struct bus_adaptor *adaptor = malloc(sizeof(struct bus_adaptor));
+
+    adaptor->start = start;
+    adaptor->end = start - 1;
+    adaptor->data = NULL;
+    adaptor->load_8 = _bus_memory_read;
+    adaptor->store_8 = NULL;
+
+    return adaptor;
+}
+
+// replace current rom with a new one from file
+int bus_load_rom(struct bus_adaptor *rom, const char *path) {
+    size_t size = 0;
     FILE *fp = fopen(path, "rb");
+    uint8_t *rom_contents = NULL;
+
     if (!fp) {
         fprintf(stderr, "error reading rom from file %s: %s\n", path, strerror(errno));
         exit(1);
     }
 
     fseek(fp, 0L, SEEK_END);
-    size_t size = ftell(fp);
-    if (size + start > 0xff00) {
+    size = ftell(fp);
+    if (size + rom->start > 0xff00) {
         fprintf(stderr, "file %s is too big %ld \n", path, size);
-        size = 0xff00l - start;
+        size = 0xff00l - rom->start;
         printf("Updated size %ld\n", size);
     }
     fseek(fp, 0L, SEEK_SET);
 
-    uint8_t *rom_contents = malloc(size);
+    rom_contents = malloc(size);
 
     size_t remaining = size;
     uint16_t pos = 0;
@@ -76,6 +98,7 @@ struct bus_adaptor * bus_create_rom(char *path, uint16_t start) {
         size_t ret = fread(rom_contents + pos, 1, remaining > 1024 ? 1024: remaining, fp);
         if (ret <=0) {
             fprintf(stderr, "fread() failed: %zu\n", ret);
+            free(rom_contents);
             exit(EXIT_FAILURE);
         }
         remaining -= ret;
@@ -83,17 +106,14 @@ struct bus_adaptor * bus_create_rom(char *path, uint16_t start) {
     }
     fclose(fp);
 
-    struct bus_adaptor *adaptor = malloc(sizeof(struct bus_adaptor));
+    if (rom->data) free(rom->data);
 
-    adaptor->start = start;
-    adaptor->end = start + size -1;
-    adaptor->data = rom_contents;
-    adaptor->load_8 = _bus_memory_read;
-    adaptor->store_8 = NULL;
+    rom->end = rom->start + size -1;
+    rom->data = rom_contents;
 
-    printf("Created rom %s start=%04X end=%04X\n", path, adaptor->start, adaptor->end);
+    printf("Loaded rom %s start=%04X end=%04X\n", path, rom->start, rom->end);
 
-    return adaptor;
+    return 0;
 }
 
 struct bus_adaptor * bus_create_ram(uint16_t size, uint16_t start) {
