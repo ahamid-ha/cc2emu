@@ -65,7 +65,8 @@ int keyboard_buffer_empty() {
 }
 
 void keyboard_buffer_push(SDL_Event *event) {
-    keyboard_buffer[keyboard_buffer_end++] = *event;  // save a copy in the buffer
+    keyboard_buffer[keyboard_buffer_end] = *event;  // save a copy in the buffer
+    keyboard_buffer_end++;
 
     // extend the buffer
     if (keyboard_buffer_end == KEY_BOARD_BUFFER_LENGTH) keyboard_buffer_end = 0;
@@ -76,7 +77,8 @@ void keyboard_buffer_push(SDL_Event *event) {
 }
 
 SDL_Event keyboard_buffer_pull() {
-    int pos = keyboard_buffer_start++;
+    int pos = keyboard_buffer_start;
+    keyboard_buffer_start++;
     if (keyboard_buffer_start == KEY_BOARD_BUFFER_LENGTH) keyboard_buffer_start = 0;
     return keyboard_buffer[pos];
 }
@@ -193,10 +195,39 @@ int main(int argc, char* argv[]) {
 
         uint64_t next_frame_ns = nanos() + fs_time_nano;
 
-        if (is_1st_key_event_processed == 16) is_1st_key_event_processed = 0;  // wait for max 4 V. scan to send next key
+        if (is_1st_key_event_processed > 4) is_1st_key_event_processed = 0;  // wait for max 4 V. scan to send next key
         if (is_1st_key_event_processed) is_1st_key_event_processed++;
 
-        while (!keyboard_buffer_empty() && (!is_1st_key_event_processed || machine.keyboard->columns_used == 0xff)) {
+        p._nano_time_passed = 0;
+        uint64_t _last_hsync_time = p._nano_time_passed;
+        while (p._nano_time_passed < fs_time_nano) {
+            processor_next_opcode(&p);
+            p._irq = mc6821_interrupt_state(PIA(machine.pia1));  // TODO: should be done in a better way
+            p._firq = mc6821_interrupt_state(PIA(machine.pia2));  // TODO: should be done in a better way
+
+            if (p._nano_time_passed - _last_hsync_time > hs_time_nano) {
+                p._sync = 0;
+                _last_hsync_time += hs_time_nano;
+                mc6821_interrupt_1_input(PIA(machine.pia1), 0, 1);
+                mc6821_interrupt_1_input(PIA(machine.pia1), 0, 0);
+            }
+        }
+
+        video_render(machine.video);
+
+        // Update the renderer
+        SDL_RenderPresent(machine.renderer);
+
+        uint64_t time_ns = nanos();
+        if (next_frame_ns > time_ns) {
+            struct timespec res;
+            res.tv_sec = 0;
+            res.tv_nsec = next_frame_ns - time_ns;
+
+            clock_nanosleep(CLOCK_MONOTONIC, 0, &res, NULL);
+        }
+
+        while (!keyboard_buffer_empty() && (!is_1st_key_event_processed || machine.keyboard->columns_used > 24)) {
             event = keyboard_buffer_pull();
             if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
                 is_1st_key_event_processed += keyboard_set_key(machine.keyboard, &event.key, event.type == SDL_EVENT_KEY_DOWN ? 1 : 0);
@@ -212,17 +243,15 @@ int main(int argc, char* argv[]) {
                     (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) &&
                     !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT)) &&
                     (event.key.key == SDLK_LEFT || event.key.key == SDLK_RIGHT ||
-                    event.key.key == SDLK_UP || event.key.key == SDLK_DOWN ||
-                    event.key.key == SDLK_SPACE || event.key.key == SDLK_RETURN ||
-                    event.key.key == '[' || event.key.key == ']'
-                )
+                        event.key.key == SDLK_UP || event.key.key == SDLK_DOWN ||
+                        event.key.key == SDLK_SPACE || event.key.key == SDLK_RETURN ||
+                        event.key.key == '[' || event.key.key == ']'
+                    )
                 ) {
                     if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == '[') {
-                        printf("Left joystick\n");
                         joy_emulation_side = 0;
                     }
                     if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == ']') {
-                        printf("Right joystick\n");
                         joy_emulation_side = 1;
                     }
                     if (joy_emulation_side == 1) {
@@ -233,8 +262,9 @@ int main(int argc, char* argv[]) {
                             case SDLK_DOWN: machine.adc->input_joy_3 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
                             case SDLK_RETURN:
                             case SDLK_SPACE:
-                                if (event.type == SDL_EVENT_KEY_DOWN) mc6821_peripheral_input(PIA(machine.pia1), 0, 0b00, 0b10);
-                                else mc6821_peripheral_input(PIA(machine.pia1), 0, 0b10, 0b10);
+                                if (event.type == SDL_EVENT_KEY_DOWN) machine.keyboard->other_inputs &= 0b11111101;
+                                else machine.keyboard->other_inputs |= 0b10;
+                                mc6821_peripheral_input(PIA(machine.pia1), 0, machine.keyboard->other_inputs, 0b10);
                                 break;
                         }
                     } else {
@@ -246,15 +276,16 @@ int main(int argc, char* argv[]) {
                             case SDLK_DOWN: machine.adc->input_joy_1 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
                             case SDLK_RETURN:
                             case SDLK_SPACE:
-                                if (event.type == SDL_EVENT_KEY_DOWN) mc6821_peripheral_input(PIA(machine.pia1), 0, 0b0, 0b1);
-                                else mc6821_peripheral_input(PIA(machine.pia1), 0, 0b1, 0b1);
+                                if (event.type == SDL_EVENT_KEY_DOWN) machine.keyboard->other_inputs &= 0b11111110;
+                                else machine.keyboard->other_inputs |= 0b1;
+                                mc6821_peripheral_input(PIA(machine.pia1), 0, machine.keyboard->other_inputs, 0b1);
                                 break;
                         }
                     }
                     // printf("event.key.key=%d \n", event.key.key);
             } else {
                 if ((event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) && !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT))) {
-                    if ((!is_1st_key_event_processed || machine.keyboard->columns_used == 0xff))
+                    if ((!is_1st_key_event_processed || machine.keyboard->columns_used > 24))
                         is_1st_key_event_processed += keyboard_set_key(machine.keyboard, &event.key, event.type == SDL_EVENT_KEY_DOWN ? 1 : 0);
                     else
                         keyboard_buffer_push(&event);
@@ -278,42 +309,6 @@ int main(int argc, char* argv[]) {
                 joy_emulation = !joy_emulation;
                 printf("Set Joy Emulator %d\n", joy_emulation);
             }
-        }
-
-        p._nano_time_passed = 0;
-        uint64_t _last_hsync_time = p._nano_time_passed;
-        while (p._nano_time_passed < fs_time_nano) {
-            processor_next_opcode(&p);
-            p._irq = mc6821_interrupt_state(PIA(machine.pia1));  // TODO: should be done in a better way
-            p._firq = mc6821_interrupt_state(PIA(machine.pia2));  // TODO: should be done in a better way
-
-            if (p._nano_time_passed - _last_hsync_time > hs_time_nano) {
-                p._sync = 0;
-                _last_hsync_time += hs_time_nano;
-                mc6821_interrupt_1_input(PIA(machine.pia1), 0, 1);
-                mc6821_interrupt_1_input(PIA(machine.pia1), 0, 0);
-            }
-        }
-
-        // Clear the renderer with a black color
-        SDL_SetRenderDrawColor(machine.renderer, 0, 0, 0, 255);
-        SDL_RenderClear(machine.renderer);
-
-        video_render(machine.video);
-
-        // Update the renderer
-        SDL_RenderPresent(machine.renderer);
-
-        // Cap at 60 FPS to avoid excessive CPU usage
-        SDL_Delay(1000 / 60);
-
-        uint64_t time_ns = nanos();
-        if (next_frame_ns > time_ns) {
-            struct timespec res;
-            res.tv_sec = 0;
-            res.tv_nsec = next_frame_ns - time_ns;
-
-            clock_nanosleep(CLOCK_MONOTONIC, 0, &res, NULL);
         }
 
         // generate an interrupt at every f-sync at CB1 pin of machine.PIA1

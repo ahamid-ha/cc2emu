@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <SDL3/SDL.h>
 #include "keyboard.h"
@@ -7,17 +8,19 @@
 void _keyboard_column_change_cb(struct mc6821_status *pia, int peripheral_address, uint8_t columns, void *data) {
     struct keyboard_status *kb = (struct keyboard_status *)data;
     uint8_t value = 0x7f;
+
+    if (kb->last_columns_value != columns) kb->columns_used++;
+
     kb->last_columns_value = columns;
 
-    kb->columns_used |= ~columns;
-
-    for (int row=0; row < 7; row++) {
-        for (int col=0; col < 8; col++) {
+    for (uint8_t row=0; row < 7; row++) {
+        for (uint8_t col=0; col < 8; col++) {
             if (((1 << col) & columns) == 0 && kb->keyboard_keys_status[row][col]) {
                 value &= ~(1 << row);
             }
         }
     }
+    value &= kb->other_inputs;
     // printf("Keyboard input %02X out %02X\n", columns, value);
 
     // send the row values
@@ -27,6 +30,7 @@ void _keyboard_column_change_cb(struct mc6821_status *pia, int peripheral_addres
 struct keyboard_status *keyboard_initialize(struct mc6821_status *pia) {
     struct keyboard_status *ks=malloc(sizeof(struct keyboard_status));
     memset(ks, 0, sizeof(struct keyboard_status));
+    ks->other_inputs = 0xff;
     ks->pia = pia;
 
     mc6821_register_cb(pia, 1, (mc6821_cb)_keyboard_column_change_cb, ks);
@@ -164,10 +168,10 @@ int keyboard_set_key(struct keyboard_status *ks, SDL_KeyboardEvent *event, int i
             ret = keyboard_set_char(ks, sym, is_pressed);
     }
 
+    ks->columns_used = 0;
     if (ret) {
         // force updating the pia
         _keyboard_column_change_cb(ks->pia, 0, ks->last_columns_value, ks);
-        ks->columns_used = 0;
     }
     return ret;
 }
