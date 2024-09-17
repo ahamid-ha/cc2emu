@@ -2,6 +2,7 @@
 #include "mc6821.h"
 #include "sam.h"
 #include <stdlib.h>
+#include <stdio.h>
 
 #define COLOR_GREEN 0x1cd510ff
 #define COLOR_YELLOW 0xe2db0fff
@@ -58,163 +59,33 @@ const unsigned char epd_bitmap_mc6847charset [] = {
 	0x00, 0x00, 0x02, 0x04, 0x08, 0x10, 0x08, 0x04, 0x02, 0x06, 0x09, 0x08, 0x04, 0x04, 0x00, 0x04
 };
 
-#define draw_pixel(x, y, c) pixels[(x) + ((y) * (pitch))] = c
+#define draw_pixel(x, y, c) v->_pixels[(x) + ((y) * (v->_pitch))] = c
+#define CLK_CYCLE_NS 279
+#define H_HS_START_NS 2400
+#define H_HS_END_NS (H_HS_START_NS + (16 * CLK_CYCLE_NS) + (CLK_CYCLE_NS >> 1))
+#define H_LEFT_BORDER_START (H_HS_START_NS + 5100)
+#define H_AV_START (H_LEFT_BORDER_START + (29 * CLK_CYCLE_NS))
+#define H_AV_END (H_AV_START + (CLK_CYCLE_NS * 128))
+#define H_SCAN_TIME_NS (228 * CLK_CYCLE_NS + CLK_CYCLE_NS / 2 + 57)
 
+uint8_t old_sam=0;
+uint8_t old_mode=0;
 
-void render_graphics(struct video_status *v) {
-    uint16_t start_pos = v->sam->F << 9;
-    uint8_t *memory = v->memory;
+uint64_t video_start_field(struct video_status *v) {
+    v->field_row_number = 0;
+    v->_h_time_ns = H_HS_START_NS;
+    v->signal_fs = 1;
 
-    uint8_t css = (v->mode & 0x1) << 2;
-    int color_bits_shift = v->mode & 0b10 ? 1 : 2;
-    uint8_t color_bits_mask = v->mode & 0b10 ? 0b10000000 : 0b11000000;
-    uint8_t mode = (v->mode >> 1) & 7;
-    int w,h;
-
-    if (v->mode_change_count > 1) {
-        // mode changes during scan aren't supported yet
-        v->mode_change_count = 0;
-        css = 0;
+    if(!SDL_LockTexture( v->texture, NULL, (void**)&v->_pixels, &v->_pitch )) {
+        printf("SDL_LockTexture failed\n");
+        exit(1);
     }
+    v->_pitch = v->_pitch >> 2;
 
-    switch(mode) {
-        case 0:
-            w = 64;
-            h = 64;
-            break;
-        case 1:
-        case 2:
-            w = 128;
-            h = 64;
-            break;
-        case 3:
-        case 4:
-            w = 128;
-            h = 96;
-            break;
-        case 5:
-        case 6:
-            w = 128;
-            h = 192;
-            break;
-        case 7:
-            w = 256;
-            h = 192;
-            break;
-    }
-
-    uint32_t* pixels;
-    int pitch;
-
-    SDL_LockTexture( v->texture, NULL, (void**)&pixels, &pitch );
-    pitch = pitch >> 2;
-
-    for (int y=0; y<h; y++) {
-        for (int x=0; x<w; ) {
-            uint8_t data = memory[start_pos];
-            for (int bit_pos=0; bit_pos < 8; bit_pos+=color_bits_shift) {
-                int color_index = (data & color_bits_mask) >> (8 - color_bits_shift) | css;
-
-                uint32_t color;
-                if (color_bits_shift == 1) {
-                    // two color
-                    if (color_index & 1) {
-                        color = _text_render_colors[color_index - 1];
-                    } else {
-                        color = COLOR_BLACK;
-                    }
-                } else {
-                    color = _text_render_colors[color_index];
-                }
-                draw_pixel(x, y, color);
-
-                x += 1;
-                data = data << color_bits_shift;
-            }
-            start_pos++;
-        }
-    }
-
-    SDL_FRect src = {
-        .h = h,
-        .w = w,
-        .x = 0,
-        .y = 0,
-    };
-    SDL_FRect dest = {
-        .h = 192 * 4,
-        .w = 256 * 4,
-        .x = 20,
-        .y = 20,
-    };
-
-    SDL_UnlockTexture(v->texture);
-    SDL_RenderTexture(v->renderer, v->texture, &src, &dest);
+    return H_HS_START_NS;
 }
 
-void render_text(struct video_status *v) {
-    uint16_t start_pos = v->sam->F << 9;
-    uint8_t *memory = v->memory;
-
-    uint32_t text_background = v->mode & 0x1 ? COLOR_DARK_ORANGE : COLOR_DARK_GREEN;
-    uint32_t text_foreground = v->mode & 0x1 ? COLOR_ORANGE : COLOR_GREEN;
-    int color_bits_shift = v->mode & 0b10 ? 6 : 4;
-    int box_lines = v->mode & 0b10 ? 4 : 6;
-
-    uint32_t* pixels;
-    int pitch;
-
-    SDL_LockTexture( v->texture, NULL, (void**)&pixels, &pitch );
-    pitch = pitch >> 2;
-
-    for (int line=0; line < 16; line++) {
-        for (int col=0; col < 32; col++) {
-            uint8_t data = memory[start_pos + (line * 32) + col];
-
-            if (data < 128 && color_bits_shift == 4) {
-                uint8_t inverted = 0xff;
-                if (data >= 64) {
-                    inverted = 0;
-                }
-                data = data & 63;
-                for (int row = 0; row < 12; row++) {
-                    uint8_t mask = 0;
-                    if (row >= 3 && row < 10) mask = epd_bitmap_mc6847charset[data * 7 + row - 3] << 2;
-                    mask = mask ^ inverted;
-                    for (int bit = 0; bit < 8; bit++) {
-                        if ( (1 << bit) & mask) {
-                            draw_pixel(col * 8 + bit, line * 12 + row, text_background);
-                        } else {
-                            draw_pixel(col * 8 + bit, line * 12 + row, text_foreground);
-                        }
-                    }
-                }
-            } else {
-                uint8_t color = (data >> color_bits_shift) & 0b111;
-                if ((v->mode & 0x1) && color_bits_shift == 6) color |= 0b100;
-
-                for (int box_row = 12 - box_lines; box_row >= 0;) {
-                    for (int rec_x = 0; rec_x < 4; rec_x++) {
-                        for (int rec_y = 0; rec_y < box_lines; rec_y++) {
-                            if (data & 0b10) {
-                                draw_pixel(col * 8 + rec_x, line * 12 + rec_y + box_row, _text_render_colors[color]);
-                            } else {
-                                draw_pixel(col * 8 + rec_x, line * 12 + rec_y + box_row, COLOR_BLACK);
-                            }
-                            if (data & 0b01) {
-                                draw_pixel(col * 8 + rec_x + 4, line * 12 + rec_y + box_row, _text_render_colors[color]);
-                            } else {
-                                draw_pixel(col * 8 + rec_x + 4, line * 12 + rec_y + box_row, COLOR_BLACK);
-                            }
-                        }
-                    }
-                    box_row -= box_lines;
-                    data = data >> 2;
-                }
-            }
-        }
-    }
-
+void video_end_field(struct video_status *v) {
     SDL_FRect dest = {
         .h = 192 * 4,
         .w = 256 * 4,
@@ -224,28 +95,202 @@ void render_text(struct video_status *v) {
 
     SDL_UnlockTexture(v->texture);
     SDL_RenderTexture(v->renderer, v->texture, NULL, &dest);
-    // SDL_RenderCopy(v->renderer, v->texture, NULL, NULL);
 }
 
-void video_render(struct video_status *v) {
-    if (v->mode & 0b10000) {
-        render_graphics(v);
-    } else {
-        render_text(v);
+#define fs_start 217 + 13
+#define fs_end fs_start + 32
+uint64_t video_process_next(struct video_status *v) {
+    if (v->_h_time_ns < H_HS_END_NS) {
+        if(v->h_sync) {
+            sam_vdg_hs_reset(v->sam);
+            v->_x = 0;
+            if (v->field_row_number >= 13 + 25 && v->field_row_number < 13 + 25 + 192) {
+                // increment the char line number only during active area
+                v->_char_row_number++;
+                if (v->_char_row_number > 11) v->_char_row_number = 0;
+            }
+        }
+        v->h_sync = 0;
+        v->_h_time_ns = H_HS_END_NS;
+        return H_HS_START_NS - H_HS_END_NS;
     }
+    v->h_sync = 1;
+    if (v->_h_time_ns < H_AV_START) {
+        v->_h_time_ns = H_AV_START;
+        return H_AV_START - H_HS_END_NS;
+    }
+    if (v->_h_time_ns >= H_AV_END) {
+        v->_h_time_ns = H_HS_START_NS;
+        v->field_row_number++;
+
+        if (v->field_row_number == 13 + 25 + 192) {
+            sam_vdg_fs_reset(v->sam);
+            v->_char_row_number = -1;
+        }
+        if (v->field_row_number == fs_start) {
+            v->signal_fs = 0;
+        }
+        if (v->field_row_number == fs_end) {
+            v->signal_fs = 1;
+        }
+
+        if (v->field_row_number > 13 + 25 + 192 + 32) {
+            return 0;
+        }
+        return H_SCAN_TIME_NS - H_AV_END;
+    }
+
+    if (v->field_row_number >= 13 + 25 && v->field_row_number < 13 + 25 + 192) {
+        // active area 192 lines
+        long byte_time;
+        int pixels;
+        int y = v->field_row_number - (13 + 25);
+        uint8_t data = v->memory[sam_get_vdg_address(v->sam)];
+        sam_vdg_increment(v->sam);
+        if (v->enable_graphics) {
+            // graphics
+            switch(v->graphics_mode) {
+                case 0:
+                    byte_time = CLK_CYCLE_NS * 4 * 4 / 2;
+                    pixels = 4;
+                    break;
+                case 1:
+                    byte_time = CLK_CYCLE_NS * 8 * 3 / 2;
+                    pixels = 3;
+                    break;
+                case 2:
+                    byte_time = CLK_CYCLE_NS * 4 * 3 / 2;
+                    pixels = 3;
+                    break;
+                case 3:
+                    byte_time = CLK_CYCLE_NS * 8 * 2 / 2;
+                    pixels = 2;
+                    break;
+                case 4:
+                    byte_time = CLK_CYCLE_NS * 4 * 2 / 2;
+                    pixels = 2;
+                    break;
+                case 5:
+                    byte_time = CLK_CYCLE_NS * 8 * 2 / 2;
+                    pixels = 2;
+                    break;
+                case 6:
+                    byte_time = CLK_CYCLE_NS * 4 * 2 / 2;
+                    pixels = 2;
+                    break;
+                case 7:
+                    byte_time = CLK_CYCLE_NS * 8 * 1 / 2;
+                    pixels = 1;
+                    break;
+            }
+            int is_colors = ((v->graphics_mode & 1) == 0);
+            if (is_colors) {
+                for (int bit_pos=0; bit_pos < 8; bit_pos+=2) {
+                    int color_index = (data & 0b11000000) >> 6 | (v->css ? 0b100 : 0);
+                    uint32_t color = _text_render_colors[color_index];
+                    data = data << 2;
+                    for(int i=0; i < pixels; i++) {
+                        draw_pixel(v->_x++, y, color);
+                    }
+                }
+            } else {
+                for (int bit_pos=0; bit_pos < 8; bit_pos++) {
+                    int color_index = data & 0b10000000;
+                    uint32_t color = COLOR_BLACK;
+                    if (color_index) {
+                        if (v->css) color = COLOR_BUFF;
+                        else color = COLOR_GREEN;
+                    }
+                    data = data << 1;
+                    for(int i=0; i < pixels; i++) {
+                        draw_pixel(v->_x++, y, color);
+                    }
+                }
+
+            }
+        } else {
+            // text
+            byte_time = CLK_CYCLE_NS * 8 / 2;
+            int sg6 = v->graphics_mode & 0b1;
+            int sg4 = !sg6;
+            uint32_t text_background = v->css ? COLOR_DARK_ORANGE : COLOR_DARK_GREEN;
+            uint32_t text_foreground = v->css ? COLOR_ORANGE : COLOR_GREEN;
+
+            if (data < 128 && sg4) {
+                uint8_t inverted = 0xff;
+                if (data >= 64) {
+                    inverted = 0;
+                }
+                data = data & 63;
+
+                uint8_t mask = 0;
+                if (v->_char_row_number >= 3 && v->_char_row_number < 10) mask = epd_bitmap_mc6847charset[data * 7 + v->_char_row_number - 3] << 2;
+                mask = mask ^ inverted;
+                for (int bit = 0; bit < 8; bit++, v->_x++) {
+                    if ( (1 << bit) & mask) {
+                        draw_pixel(v->_x, y, text_background);
+                    } else {
+                        draw_pixel(v->_x, y, text_foreground);
+                    }
+                }
+            } else {
+                uint8_t color;
+                uint8_t columns;
+                if (sg4) {
+                    color = (data & 0b1110000) >> 4;
+                    uint8_t row = v->_char_row_number >= 6 ? 1 : 0;  // which half of the character, top or bottom
+                    columns = data >> ((1 - row) * 2);
+                } else {
+                    color = (data & 0b11000000) >> 6;
+                    if (v->css) color |= 0b100;
+                    uint8_t row = v->_char_row_number >> 2;  // divide by 4 to get the row number, as each cell is 4 rows high
+                    columns = data >> ((2 - row) * 2);
+                }
+                for (int rec_x = 0; rec_x < 4; rec_x++) {
+                    if (columns & 0b10) {
+                        draw_pixel(v->_x + rec_x, y, _text_render_colors[color]);
+                    } else {
+                        draw_pixel(v->_x + rec_x, y, COLOR_BLACK);
+                    }
+                    if (columns & 0b01) {
+                        draw_pixel(v->_x + rec_x + 4, y, _text_render_colors[color]);
+                    } else {
+                        draw_pixel(v->_x + rec_x + 4, y, COLOR_BLACK);
+                    }
+                }
+
+                v->_x += 8;
+            }
+        }
+
+        v->_h_time_ns += byte_time;
+        return byte_time;
+    }
+
+    // vertical blanking 13 H lines
+    // top border 25 H lines
+    // bottom border 26 lines
+    // vertical retrace 6 h lines
+
+    v->_h_time_ns = H_AV_END;
+    return H_AV_END - H_AV_START;
 }
 
 void _video_mode_change_cb(struct mc6821_status *pia, int peripheral_address, uint8_t value, void *data) {
     struct video_status *v = (struct video_status *)data;
-    v->mode = value >> 3;
+    v->vdg_op_mode = value >> 3;
     v->mode_change_count++;
 }
 
 struct video_status *video_initialize(struct sam_status *sam, struct mc6821_status *pia, uint8_t *memory, SDL_Renderer* renderer) {
     struct video_status *v=malloc(sizeof(struct video_status));
+    memset(v, 0, sizeof(struct video_status));
     v->memory = memory;
-    v->mode = 0;
+    v->vdg_op_mode = 0;
     v->sam = sam;
+
+    v->signal_fs = 1;
+    v->h_sync = 1;
 
     v->renderer = renderer;
     v->texture = SDL_CreateTexture( renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, 256, 192 );

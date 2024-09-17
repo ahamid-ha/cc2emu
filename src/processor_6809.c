@@ -3,7 +3,7 @@
 #include <string.h>
 #include "processor_6809.h"
 
-#define add_cycles(t) p->_nano_time_passed += t * cycle_nano
+#define add_cycles(t) p->_virtual_time_nano += t * cycle_nano
 #define processor_load_8(p, addr) bus_read_8(&p->bus, addr)
 #define processor_store_8(p, addr, value) bus_write_8(&p->bus, addr, value)
 
@@ -1184,7 +1184,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         op_code_immediate8(0x8B, 'ADDA', 2, __opcode_add8, &p->A)
         op_code_immediate16(0x8C, 'CMPX', 4, __opcode_sub16, &p->X, 1);
         op_code_relative8(0x8D, 'BSR', 7, __opcode_jsr)
-        op_code_immediate16(0x8E, 'LDX', 4, __opcode_ldx);
+        op_code_immediate16(0x8E, 'LDX', 3, __opcode_ldx);
 
         op_code_direct(0x90, 'SUBA', 4, __opcode_sub8, &p->A, 0)
         op_code_direct(0x91, 'CMPA', 4, __opcode_sub8, &p->A, 1)
@@ -1232,8 +1232,8 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         op_code_extended(0xB9, 'ADCA', 5, __opcode_adc, &p->A)
         op_code_extended(0xBA, 'ORA', 5, __opcode_or, &p->A)
         op_code_extended(0xBB, 'ADDA', 5, __opcode_add8, &p->A)
-        op_code_extended(0xBC, 'CMPX', 6, __opcode_sub16, &p->X, 1)
-        op_code_extended(0xBD, 'JSR', 6, __opcode_jsr)
+        op_code_extended(0xBC, 'CMPX', 7, __opcode_sub16, &p->X, 1)
+        op_code_extended(0xBD, 'JSR', 8, __opcode_jsr)
         op_code_extended(0xBE, 'LDX', 6, __opcode_ldx)
         op_code_extended(0xBF, 'STX', 6, __opcode_stx)
 
@@ -1336,7 +1336,8 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         op_code_extended(0x10BC, 'CMPY', 8, __opcode_sub16, &p->Y, 1)
         op_code_extended(0x10BE, 'LDY', 7, __opcode_ldy)
         op_code_extended(0x10BF, 'STY', 7, __opcode_sty)
-        op_code_immediate16(0x10CE, '', 5, __opcode_lds)
+
+        op_code_immediate16(0x10CE, 'LDS', 4, __opcode_lds)
 
         op_code_direct(0x10DE, 'LDS', 6, __opcode_lds)
         op_code_direct(0x10DF, 'STS', 6, __opcode_sts)
@@ -1344,8 +1345,8 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         op_code_indexed(0x10EE, 'LDS', 6, __opcode_lds)
         op_code_indexed(0x10EF, 'STS', 6, __opcode_sts)
 
-        op_code_extended(0x10FE, 'LDS', 8, __opcode_lds)
-        op_code_extended(0x10FF, 'STS', 8, __opcode_sts)
+        op_code_extended(0x10FE, 'LDS', 7, __opcode_lds)
+        op_code_extended(0x10FF, 'STS', 7, __opcode_sts)
 
         op_code_immediate16(0x1183, 'CMPU', 5, __opcode_sub16, &p->U, 1)
         op_code_immediate16(0x118C, 'CMPS', 5, __opcode_sub16, &p->S, 1)
@@ -1370,6 +1371,11 @@ void processor_next_opcode(struct processor_state *p) {
         add_cycles(1);
         return;
     }
+
+    if (p->_nmi || p->_firq || p->_irq) {
+        p->_sync = 0;
+    }
+
     if (p->_sync) {
         add_cycles(3);
         return;

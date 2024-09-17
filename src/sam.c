@@ -31,6 +31,41 @@ void _bus_sam_write(struct bus_adaptor *p, uint16_t addr, uint8_t value) {
         set_sam_bit(14, M1)
         set_sam_bit(15, TY)
     }
+
+    switch(data->V) {
+        case 0:
+            data->_vdg_multiplier_x = 1;
+            data->_vdg_multiplier_y = 12;
+            break;
+        case 1:
+            data->_vdg_multiplier_x = 3;
+            data->_vdg_multiplier_y = 1;
+            break;
+        case 2:
+            data->_vdg_multiplier_x = 1;
+            data->_vdg_multiplier_y = 3;
+            break;
+        case 3:
+            data->_vdg_multiplier_x = 2;
+            data->_vdg_multiplier_y = 1;
+            break;
+        case 4:
+            data->_vdg_multiplier_x = 1;
+            data->_vdg_multiplier_y = 2;
+            break;
+        case 5:
+            data->_vdg_multiplier_x = 1;
+            data->_vdg_multiplier_y = 1;
+            break;
+        case 6:
+            data->_vdg_multiplier_x = 1;
+            data->_vdg_multiplier_y = 1;
+            break;
+        case 7:
+            data->_vdg_multiplier_x = 1;
+            data->_vdg_multiplier_y = 1;
+            break;
+    }
 }
 
 
@@ -48,4 +83,32 @@ struct bus_adaptor * bus_create_sam() {
     printf("Created SAM start=%04X end=%04X\n", adaptor->start, adaptor->end);
 
     return adaptor;
+}
+
+void sam_vdg_hs_reset(struct sam_status *sam) {
+    if (sam->V == 7) return;
+    sam->_vdg_address_0_3 &= 0xfff0;
+    if (sam->V0 == 0) sam->_vdg_address_4 &= 0xffe0;
+}
+
+void sam_vdg_fs_reset(struct sam_status *sam) {
+    sam->_vdg_address_0_3 = 0;
+    sam->_vdg_address_4 = 0;
+    sam->_vdg_address_5_15 = sam->F << 9;
+}
+
+uint16_t sam_get_vdg_address(struct sam_status *sam) {
+    return (sam->_vdg_address_0_3 & 0b1111) | (sam->_vdg_address_4 & 0b10000) | (sam->_vdg_address_5_15 & 0xffe0);
+}
+
+void sam_vdg_increment(struct sam_status *sam) {
+    sam->_vdg_address_0_3++;
+    if ((sam->_vdg_address_0_3 >> 4) >= sam->_vdg_multiplier_x) {
+        sam->_vdg_address_4 += 1 << 4;
+        sam->_vdg_address_0_3 = 0;
+    }
+    if ((sam->_vdg_address_4 >> 5) >= sam->_vdg_multiplier_y) {
+        sam->_vdg_address_5_15 += 1 << 5;
+        sam->_vdg_address_4 = 0;
+    }
 }

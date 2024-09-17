@@ -193,27 +193,30 @@ int main(int argc, char* argv[]) {
         // Handle events
         SDL_Event event;
 
+        p._virtual_time_nano = nanos();  // re-sync time
+
         uint64_t next_frame_ns = nanos() + fs_time_nano;
 
         if (is_1st_key_event_processed > 4) is_1st_key_event_processed = 0;  // wait for max 4 V. scan to send next key
         if (is_1st_key_event_processed) is_1st_key_event_processed++;
 
-        p._nano_time_passed = 0;
-        uint64_t _last_hsync_time = p._nano_time_passed;
-        while (p._nano_time_passed < fs_time_nano) {
+        uint64_t next_video_call_after_ns = video_start_field(machine.video);
+        uint64_t next_video_call = next_video_call_after_ns + p._virtual_time_nano;
+        while (next_video_call_after_ns) {
             processor_next_opcode(&p);
+
+            while (next_video_call_after_ns && p._virtual_time_nano >= next_video_call) {
+                next_video_call_after_ns = video_process_next(machine.video);
+                next_video_call += next_video_call_after_ns;
+                // printf("machine.video->h_sync=%d\n", machine.video->h_sync);
+                mc6821_interrupt_1_input(PIA(machine.pia1), 0, machine.video->h_sync);
+                mc6821_interrupt_1_input(PIA(machine.pia1), 1, machine.video->signal_fs);
+            }
+
             p._irq = mc6821_interrupt_state(PIA(machine.pia1));  // TODO: should be done in a better way
             p._firq = mc6821_interrupt_state(PIA(machine.pia2));  // TODO: should be done in a better way
-
-            if (p._nano_time_passed - _last_hsync_time > hs_time_nano) {
-                p._sync = 0;
-                _last_hsync_time += hs_time_nano;
-                mc6821_interrupt_1_input(PIA(machine.pia1), 0, 1);
-                mc6821_interrupt_1_input(PIA(machine.pia1), 0, 0);
-            }
         }
-
-        video_render(machine.video);
+        video_end_field(machine.video);
 
         // Update the renderer
         SDL_RenderPresent(machine.renderer);
@@ -310,11 +313,6 @@ int main(int argc, char* argv[]) {
                 printf("Set Joy Emulator %d\n", joy_emulation);
             }
         }
-
-        // generate an interrupt at every f-sync at CB1 pin of machine.PIA1
-        mc6821_interrupt_1_input(PIA(machine.pia1), 1, 1);
-        mc6821_interrupt_1_input(PIA(machine.pia1), 1, 0);
-        p._sync = 0;
     }
 
     // Clean up resources before exiting
