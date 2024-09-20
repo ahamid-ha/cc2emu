@@ -70,6 +70,45 @@ struct bus_adaptor * bus_create_rom(uint16_t start) {
     return adaptor;
 }
 
+// loads the contents of a file at a specific location in ram
+int bus_load_ram(struct bus_adaptor *ram, const char *path, int pos) {
+    size_t size = 0;
+    size_t ignore_bytes = 0;
+    int start = pos;
+    FILE *fp = fopen(path, "rb");
+
+    if (!fp) {
+        fprintf(stderr, "error reading rom from file %s: %s\n", path, strerror(errno));
+        exit(1);
+    }
+
+    fseek(fp, 0L, SEEK_END);
+    size = ftell(fp);
+    if (size + pos > ram->end - ram->start) {
+        fprintf(stderr, "file %s is too big %ld \n", path, size);
+        size = ram->end - ram->start;
+        printf("Updated size %ld\n", size);
+    }
+    fseek(fp, ignore_bytes, SEEK_SET);
+
+    size_t remaining = size - ignore_bytes;
+    while (remaining > 0) {
+        size_t ret = fread(ram->data + pos, 1, remaining > 1024 ? 1024: remaining, fp);
+        if (ret <=0) {
+            fprintf(stderr, "fread() failed: %zu\n", ret);
+            exit(EXIT_FAILURE);
+        }
+        remaining -= ret;
+        pos += ret;
+    }
+    fclose(fp);
+
+    printf("Loaded ram %s start=%04X end=%04X, to EXEC &H%04X\n", path, start, (int)(start + size), start);
+
+    return 0;
+}
+
+
 // replace current rom with a new one from file
 int bus_load_rom(struct bus_adaptor *rom, const char *path) {
     size_t size = 0;

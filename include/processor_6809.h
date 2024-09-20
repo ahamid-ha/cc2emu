@@ -2,8 +2,7 @@
 #include <bus.h>
 
 
-#define cycle_nano 1117
-// #define cycle_nano 1042
+#define cycle_nano 279 * 4
 
 #define fs_time_nano 16700000
 #define hs_time_nano 63500
@@ -43,6 +42,7 @@ struct processor_state {
     int _stopped;
     int _dump_execution;
     int _irq;
+    uint64_t _irq_active_time_nano;
     int _firq;
     int _nmi;
     int _sync;

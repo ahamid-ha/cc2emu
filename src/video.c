@@ -66,7 +66,7 @@ const unsigned char epd_bitmap_mc6847charset [] = {
 #define H_LEFT_BORDER_START (H_HS_START_NS + 5100)
 #define H_AV_START (H_LEFT_BORDER_START + (29 * CLK_CYCLE_NS))
 #define H_AV_END (H_AV_START + (CLK_CYCLE_NS * 128))
-#define H_SCAN_TIME_NS (228 * CLK_CYCLE_NS + CLK_CYCLE_NS / 2 + 57)
+#define H_SCAN_TIME_NS (228 * CLK_CYCLE_NS)
 
 uint8_t old_sam=0;
 uint8_t old_mode=0;
@@ -97,10 +97,10 @@ void video_end_field(struct video_status *v) {
     SDL_RenderTexture(v->renderer, v->texture, NULL, &dest);
 }
 
-#define fs_start 217 + 13
+#define fs_start 13 + 25 + 192
 #define fs_end fs_start + 32
 uint64_t video_process_next(struct video_status *v) {
-    if (v->_h_time_ns < H_HS_END_NS) {
+    if (v->_h_time_ns == H_HS_START_NS) {
         if(v->h_sync) {
             sam_vdg_hs_reset(v->sam);
             v->_x = 0;
@@ -112,16 +112,16 @@ uint64_t video_process_next(struct video_status *v) {
         }
         v->h_sync = 0;
         v->_h_time_ns = H_HS_END_NS;
-        return H_HS_START_NS - H_HS_END_NS;
+        return H_HS_END_NS - H_HS_START_NS;
     }
     v->h_sync = 1;
-    if (v->_h_time_ns < H_AV_START) {
+    if (v->_h_time_ns == H_HS_END_NS) {
         v->_h_time_ns = H_AV_START;
         return H_AV_START - H_HS_END_NS;
     }
     if (v->_h_time_ns >= H_AV_END) {
+        int old_h_time_ns = v->_h_time_ns;
         v->_h_time_ns = H_HS_START_NS;
-        v->field_row_number++;
 
         if (v->field_row_number == 13 + 25 + 192) {
             sam_vdg_fs_reset(v->sam);
@@ -130,14 +130,15 @@ uint64_t video_process_next(struct video_status *v) {
         if (v->field_row_number == fs_start) {
             v->signal_fs = 0;
         }
-        if (v->field_row_number == fs_end) {
+        if (v->field_row_number == fs_end || v->field_row_number < fs_start) {
             v->signal_fs = 1;
         }
 
+        v->field_row_number++;
         if (v->field_row_number > 13 + 25 + 192 + 32) {
             return 0;
         }
-        return H_SCAN_TIME_NS - H_AV_END;
+        return H_SCAN_TIME_NS - old_h_time_ns + H_HS_START_NS;
     }
 
     if (v->field_row_number >= 13 + 25 && v->field_row_number < 13 + 25 + 192) {

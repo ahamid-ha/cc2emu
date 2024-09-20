@@ -414,8 +414,6 @@ void __opcode_cwai(struct processor_state *p, uint16_t address) {
     p->S--;
     processor_store_8(p, p->S, p->CC);
 
-    p->PC = processor_load_16(p, 0xfff6);
-
     p->_cwai = 1;
 }
 
@@ -1080,7 +1078,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         op_code_direct(0x0F, 'CLR', 6, __opcode_clr)
 
         op_code(0x12, 'NOP', 2, __opcode_nop)
-        op_code(0x13, 'SYNC', 4, __opcode_sync)
+        op_code(0x13, 'SYNC', 2, __opcode_sync)
         op_code_relative16(0x16, 'LBRA', 5, __opcode_jmp)
         op_code_relative16(0x17, 'LBSR', 9, __opcode_jsr)
         op_code(0x19, 'DAA', 2, __opcode_daa)
@@ -1367,18 +1365,27 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
 }
 
 void processor_next_opcode(struct processor_state *p) {
+    if (!p->_irq) {
+        p->_irq_active_time_nano = 0;
+     } else if (!p->_irq_active_time_nano) {
+        // delay the irq by 3 cycles
+        p->_irq_active_time_nano = p->_virtual_time_nano + (cycle_nano * 3);
+     }
+
     if (p->_stopped) {
         add_cycles(1);
         return;
     }
 
-    if (p->_nmi || p->_firq || p->_irq) {
-        p->_sync = 0;
-    }
 
     if (p->_sync) {
-        add_cycles(3);
-        return;
+        if (p->_nmi || p->_firq || (p->_irq && p->_virtual_time_nano >= p->_irq_active_time_nano)) {
+            add_cycles(1);
+            p->_sync = 0;
+        } else {
+            add_cycles(1);
+            return;
+        }
     }
 
     if (!p->_cwai && p->_nmi) {
@@ -1441,10 +1448,22 @@ void processor_next_opcode(struct processor_state *p) {
     }
 
     if (p->_cwai) {
-        add_cycles(1);
-        if (p->_nmi || p->_firq || p->_irq) {
+        if (p->_nmi) {
             p->_cwai = 0;
+            p->F = 1;
+            p->I = 1;
+            p->PC = processor_load_16(p, 0xfffc);
+        } else if (p->_firq && !p->F) {
+            p->_cwai = 0;
+            p->F = 1;
+            p->I = 1;
+            p->PC = processor_load_16(p, 0xfff6);
+        } else if (p->_irq && !p->I) {
+            p->_cwai = 0;
+            p->I = 1;
+            p->PC = processor_load_16(p, 0xfff8);
         } else {
+            add_cycles(2);
             return;
         }
     }
@@ -1458,7 +1477,7 @@ void processor_next_opcode(struct processor_state *p) {
         if (!(opcode == 0x10 || opcode == 0x11)) opcode = opcode_high + opcode;
     }
 
-    if (p->_dump_execution) printf("Execuding %04X opcode %04X\n", org_address, opcode);
+    if (p->_dump_execution) printf("Execuding %04X opcode %04X %02X\n", org_address, opcode, processor_load_8(p, p->PC));
     execute_opcode(p, opcode);
     if (p->_dump_execution) processor_dump(p);
 }

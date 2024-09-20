@@ -107,6 +107,12 @@ void clipboard_copy() {
     SDL_free(text);
 }
 
+bool str_ends_with(const char *str, const char *substr) {
+    if (!str || !substr) return false;
+    if (strlen(str) < strlen(substr)) return false;
+    return strncmp(str + strlen(str) - strlen(substr), substr, strlen(substr)) == 0;
+}
+
 static void SDLCALL rom_selection_cb(void* data, const char* const* filelist, int filter)
 {
     if (!filelist) {
@@ -118,10 +124,14 @@ static void SDLCALL rom_selection_cb(void* data, const char* const* filelist, in
 
     struct bus_adaptor *cartridge=(struct bus_adaptor *)data;
     const char *rom_path = *filelist;
-    bus_load_rom(cartridge, rom_path);
+    if (str_ends_with(rom_path, ".bin")) {
+        bus_load_ram(cartridge, rom_path, 0x4000);
+    } else {
+        bus_load_rom(cartridge, rom_path);
 
-    mc6821_interrupt_1_input(PIA(machine.pia2), 1, 1);
-    mc6821_interrupt_1_input(PIA(machine.pia2), 1, 0);
+        mc6821_interrupt_1_input(PIA(machine.pia2), 1, 1);
+        mc6821_interrupt_1_input(PIA(machine.pia2), 1, 0);
+    }
 }
 
 int main(int argc, char* argv[]) {
@@ -189,14 +199,9 @@ int main(int argc, char* argv[]) {
     int is_1st_key_event_processed = 0;  // only one key is processed per one iteration to give time to the machine to process it
     int joy_emulation = 0;
     int joy_emulation_side = 1;  // 0: left, 1: right
+
+    p._virtual_time_nano = nanos();  // sync time
     while (running) {
-        // Handle events
-        SDL_Event event;
-
-        p._virtual_time_nano = nanos();  // re-sync time
-
-        uint64_t next_frame_ns = nanos() + fs_time_nano;
-
         if (is_1st_key_event_processed > 4) is_1st_key_event_processed = 0;  // wait for max 4 V. scan to send next key
         if (is_1st_key_event_processed) is_1st_key_event_processed++;
 
@@ -222,14 +227,16 @@ int main(int argc, char* argv[]) {
         SDL_RenderPresent(machine.renderer);
 
         uint64_t time_ns = nanos();
-        if (next_frame_ns > time_ns) {
+        if (p._virtual_time_nano > time_ns) {
             struct timespec res;
             res.tv_sec = 0;
-            res.tv_nsec = next_frame_ns - time_ns;
+            res.tv_nsec = p._virtual_time_nano - time_ns;
 
             clock_nanosleep(CLOCK_MONOTONIC, 0, &res, NULL);
         }
 
+        // Handle events
+        SDL_Event event;
         while (!keyboard_buffer_empty() && (!is_1st_key_event_processed || machine.keyboard->columns_used > 24)) {
             event = keyboard_buffer_pull();
             if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
