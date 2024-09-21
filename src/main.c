@@ -124,7 +124,9 @@ static void SDLCALL rom_selection_cb(void* data, const char* const* filelist, in
 
     struct bus_adaptor *cartridge=(struct bus_adaptor *)data;
     const char *rom_path = *filelist;
-    if (str_ends_with(rom_path, ".bin")) {
+    if (str_ends_with(rom_path, ".wav")) {
+        adc_load_cassette(machine.adc, rom_path);
+    } else if (str_ends_with(rom_path, ".bin")) {
         bus_load_ram(cartridge, rom_path, 0x4000);
     } else {
         bus_load_rom(cartridge, rom_path);
@@ -210,6 +212,8 @@ int main(int argc, char* argv[]) {
         while (next_video_call_after_ns) {
             processor_next_opcode(&p);
 
+            adc_process(machine.adc, p._virtual_time_nano);
+
             while (next_video_call_after_ns && p._virtual_time_nano >= next_video_call) {
                 next_video_call_after_ns = video_process_next(machine.video);
                 next_video_call += next_video_call_after_ns;
@@ -260,9 +264,11 @@ int main(int argc, char* argv[]) {
                 ) {
                     if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == '[') {
                         joy_emulation_side = 0;
+                        printf("Keyboard switched to Left Joystick\n");
                     }
                     if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == ']') {
                         joy_emulation_side = 1;
+                        printf("Keyboard switched to Right Joystick\n");
                     }
                     if (joy_emulation_side == 1) {
                         switch(event.key.key) {

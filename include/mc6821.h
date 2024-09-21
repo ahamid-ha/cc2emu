@@ -52,5 +52,6 @@ void mc6821_register_c2_cb(struct mc6821_status *p, int peripheral_address, mc68
 void mc6821_interrupt_1_input(struct mc6821_status *p, int peripheral_address, uint8_t value);
 void mc6821_interrupt_2_input(struct mc6821_status *p, int peripheral_address, uint8_t value);
 int mc6821_interrupt_state(struct mc6821_status *p);
+uint8_t mc6821_read_c2(struct mc6821_status *p, int peripheral_address);
 
 #endif

@@ -151,6 +151,12 @@ void _bus_pia_write(struct bus_adaptor *p, uint16_t addr, uint8_t value) {
     mc6821_write_register(data, addr, value);
 }
 
+uint8_t mc6821_read_c2(struct mc6821_status *p, int peripheral_address) {
+    struct mc6821_peripheral_status *ps = peripheral(peripheral_address);
+    if (ps->c2_output) return ps->c2_enable;
+    return 0;
+}
+
 struct bus_adaptor * bus_create_pia1() {
     struct bus_adaptor *adaptor = malloc(sizeof(struct bus_adaptor));
     struct mc6821_status *data = malloc(sizeof(struct mc6821_status));
