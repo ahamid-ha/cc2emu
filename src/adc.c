@@ -57,6 +57,47 @@ void _adc_motor_cb(struct mc6821_status *pia, int peripheral_address, uint8_t va
     else printf("Cassette motor off\n");
 }
 
+void SDLCALL _adc_sound_sample_cb(void *data, SDL_AudioStream *stream, int additional_amount, int total_amount)
+{
+    struct adc_status *adc = (struct adc_status *)data;
+    if (additional_amount && adc->sound_samples_size) {
+        if (adc->sound_samples_size > additional_amount) {
+            SDL_PutAudioStreamData(stream, adc->sound_samples, additional_amount);
+            adc->sound_samples_size -= additional_amount;
+            memcpy(adc->sound_samples, adc->sound_samples + additional_amount, adc->sound_samples_size);
+        } else {
+            SDL_PutAudioStreamData(stream, adc->sound_samples, adc->sound_samples_size);
+            adc->sound_samples_size = 0;
+        }
+    }
+}
+
+void _initialize_audio(struct adc_status *adc) {
+    if (!adc->stream) {
+        SDL_AudioSpec spec = {
+            .format = SDL_AUDIO_U8,
+            .channels = 1,
+            .freq = 44100
+        };
+        adc->stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, _adc_sound_sample_cb, adc);
+        SDL_ResumeAudioDevice(SDL_GetAudioStreamDevice(adc->stream));
+    }
+    adc->sound_samples_size = 0;
+    adc->next_sound_sample_time_ns = 0;
+}
+
+void _adc_sound_cb(struct mc6821_status *pia, int peripheral_address, uint8_t value, void *data) {
+    struct adc_status *adc = (struct adc_status *)data;
+
+    adc->sound_enabled = value;
+    if (value) {
+        _initialize_audio(adc);
+    }
+    else {
+        SDL_FlushAudioStream(adc->stream);
+    }
+}
+
 struct adc_status *adc_initialize(struct mc6821_status *pia1, struct mc6821_status *pia2) {
     struct adc_status *adc=malloc(sizeof(struct adc_status));
     memset(adc, 0, sizeof(struct adc_status));
@@ -71,6 +112,7 @@ struct adc_status *adc_initialize(struct mc6821_status *pia1, struct mc6821_stat
     mc6821_register_c2_cb(pia1, 0, (mc6821_cb)_adc_source_a_change_cb, adc);
     mc6821_register_c2_cb(pia1, 1, (mc6821_cb)_adc_source_b_change_cb, adc);
     mc6821_register_c2_cb(pia2, 0, (mc6821_cb)_adc_motor_cb, adc);
+    mc6821_register_c2_cb(pia2, 1, (mc6821_cb)_adc_sound_cb, adc);
     mc6821_register_cb(pia2, 0, (mc6821_cb)_adc_level_change_cb, adc);
 
     return adc;
@@ -116,20 +158,38 @@ void adc_load_cassette(struct adc_status *adc, const char *path) {
 }
 
 #define CASSETTE_SAMPLE_NS 104170
+#define SOUND_SAMPLE_NS 22675
 void adc_process(struct adc_status *adc, uint64_t virtual_time_ns) {
     if (adc->cassette_audio_buf && adc->cassette_motor) {
         if (!adc->next_cassette_sample_time_ns) {
             adc->next_cassette_sample_time_ns = virtual_time_ns + CASSETTE_SAMPLE_NS;
             adc->cassette_audio_location = 0;
-            return;
+        } else {
+            if (virtual_time_ns >= adc->next_cassette_sample_time_ns &&  adc->cassette_audio_location < adc->cassette_audio_len) {
+                if (adc->cassette_audio_buf[adc->cassette_audio_location] > 127)
+                    mc6821_peripheral_input(adc->pia2, 0, 0, 1);
+                else
+                    mc6821_peripheral_input(adc->pia2, 0, 1, 1);
+                adc->cassette_audio_location++;
+                adc->next_cassette_sample_time_ns += CASSETTE_SAMPLE_NS;
+            }
         }
-        if (virtual_time_ns >= adc->next_cassette_sample_time_ns &&  adc->cassette_audio_location < adc->cassette_audio_len) {
-            if (adc->cassette_audio_buf[adc->cassette_audio_location] > 127)
-                mc6821_peripheral_input(adc->pia2, 0, 0, 1);
-            else
-                mc6821_peripheral_input(adc->pia2, 0, 1, 1);
-            adc->cassette_audio_location++;
-            adc->next_cassette_sample_time_ns += CASSETTE_SAMPLE_NS;
+    }
+
+    if (adc->sound_enabled && virtual_time_ns > adc->next_sound_sample_time_ns) {
+        uint8_t snd;
+        switch (adc->switch_selection) {
+            // just passthrough cassette noise
+            case 0: snd = (int)(adc->adc_level * 255 / 5); break;
+            case 1: if (adc->cassette_audio_location < adc->cassette_audio_len) snd = adc->cassette_audio_buf[adc->cassette_audio_location]; break;
+            default: snd = 0;
+        }
+        if (adc->sound_samples_size < SOUND_BUFFER_SIZE) {
+            adc->sound_samples[adc->sound_samples_size++] = snd;
+            if (!adc->next_sound_sample_time_ns) adc->next_sound_sample_time_ns = virtual_time_ns;
+            adc->next_sound_sample_time_ns += SOUND_SAMPLE_NS;
+        } else {
+            printf("Sound buffer overflow\n");
         }
     }
 }

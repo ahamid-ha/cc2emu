@@ -2,6 +2,9 @@
 #include "mc6821.h"
 
 
+#define SOUND_BUFFER_SIZE 40000
+
+
 struct adc_status {
     float adc_level;
     uint8_t switch_selection;
@@ -13,6 +16,12 @@ struct adc_status {
 
     struct mc6821_status *pia1;
     struct mc6821_status *pia2;
+
+    uint8_t sound_enabled;  // 0: off, 1: on
+    uint8_t sound_samples[SOUND_BUFFER_SIZE];
+    int sound_samples_size;
+    uint64_t next_sound_sample_time_ns;
+    SDL_AudioStream *stream;
 
     uint8_t cassette_motor;  // 0: off, 1: on
     uint32_t cassette_audio_len;

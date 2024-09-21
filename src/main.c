@@ -140,7 +140,7 @@ int main(int argc, char* argv[]) {
     signal(SIGSEGV, segv_handler);
 
     // Initialize SDL
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
+    if (!SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO)) {
         printf("Error initializing SDL: %s\n", SDL_GetError());
         return -1;
     }
@@ -231,100 +231,96 @@ int main(int argc, char* argv[]) {
         SDL_RenderPresent(machine.renderer);
 
         uint64_t time_ns = nanos();
-        if (p._virtual_time_nano > time_ns) {
-            struct timespec res;
-            res.tv_sec = 0;
-            res.tv_nsec = p._virtual_time_nano - time_ns;
-
-            clock_nanosleep(CLOCK_MONOTONIC, 0, &res, NULL);
-        }
-
-        // Handle events
-        SDL_Event event;
-        while (!keyboard_buffer_empty() && (!is_1st_key_event_processed || machine.keyboard->columns_used > 24)) {
-            event = keyboard_buffer_pull();
-            if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
-                is_1st_key_event_processed += keyboard_set_key(machine.keyboard, &event.key, event.type == SDL_EVENT_KEY_DOWN ? 1 : 0);
-            }
-        }
-
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_EVENT_QUIT) {
-                running = false;
-            }
-
-            if (joy_emulation &&
-                    (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) &&
-                    !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT)) &&
-                    (event.key.key == SDLK_LEFT || event.key.key == SDLK_RIGHT ||
-                        event.key.key == SDLK_UP || event.key.key == SDLK_DOWN ||
-                        event.key.key == SDLK_SPACE || event.key.key == SDLK_RETURN ||
-                        event.key.key == '[' || event.key.key == ']'
-                    )
-                ) {
-                    if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == '[') {
-                        joy_emulation_side = 0;
-                        printf("Keyboard switched to Left Joystick\n");
-                    }
-                    if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == ']') {
-                        joy_emulation_side = 1;
-                        printf("Keyboard switched to Right Joystick\n");
-                    }
-                    if (joy_emulation_side == 1) {
-                        switch(event.key.key) {
-                            case SDLK_LEFT: machine.adc->input_joy_2 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
-                            case SDLK_RIGHT: machine.adc->input_joy_2 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
-                            case SDLK_UP: machine.adc->input_joy_3 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
-                            case SDLK_DOWN: machine.adc->input_joy_3 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
-                            case SDLK_RETURN:
-                            case SDLK_SPACE:
-                                if (event.type == SDL_EVENT_KEY_DOWN) machine.keyboard->other_inputs &= 0b11111101;
-                                else machine.keyboard->other_inputs |= 0b10;
-                                mc6821_peripheral_input(PIA(machine.pia1), 0, machine.keyboard->other_inputs, 0b10);
-                                break;
-                        }
-                    } else {
-                        switch(event.key.key) {
-                            // left
-                            case SDLK_LEFT: machine.adc->input_joy_0 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
-                            case SDLK_RIGHT: machine.adc->input_joy_0 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
-                            case SDLK_UP: machine.adc->input_joy_1 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
-                            case SDLK_DOWN: machine.adc->input_joy_1 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
-                            case SDLK_RETURN:
-                            case SDLK_SPACE:
-                                if (event.type == SDL_EVENT_KEY_DOWN) machine.keyboard->other_inputs &= 0b11111110;
-                                else machine.keyboard->other_inputs |= 0b1;
-                                mc6821_peripheral_input(PIA(machine.pia1), 0, machine.keyboard->other_inputs, 0b1);
-                                break;
-                        }
-                    }
-                    // printf("event.key.key=%d \n", event.key.key);
-            } else {
-                if ((event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) && !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT))) {
-                    if ((!is_1st_key_event_processed || machine.keyboard->columns_used > 24))
-                        is_1st_key_event_processed += keyboard_set_key(machine.keyboard, &event.key, event.type == SDL_EVENT_KEY_DOWN ? 1 : 0);
-                    else
-                        keyboard_buffer_push(&event);
+        while (p._virtual_time_nano > time_ns) {
+            // Handle events
+            SDL_Event event;
+            while (!keyboard_buffer_empty() && (!is_1st_key_event_processed || machine.keyboard->columns_used > 24)) {
+                event = keyboard_buffer_pull();
+                if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
+                    is_1st_key_event_processed += keyboard_set_key(machine.keyboard, &event.key, event.type == SDL_EVENT_KEY_DOWN ? 1 : 0);
                 }
             }
 
-            if (event.type == SDL_EVENT_KEY_DOWN && event.key.mod & SDL_KMOD_CTRL && event.key.key == SDLK_V) {
-                clipboard_copy();
+            while (SDL_WaitEventTimeout(&event, 10)) {
+                if (event.type == SDL_EVENT_QUIT) {
+                    running = false;
+                }
+
+                if (joy_emulation &&
+                        (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) &&
+                        !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT)) &&
+                        (event.key.key == SDLK_LEFT || event.key.key == SDLK_RIGHT ||
+                            event.key.key == SDLK_UP || event.key.key == SDLK_DOWN ||
+                            event.key.key == SDLK_SPACE || event.key.key == SDLK_RETURN ||
+                            event.key.key == '[' || event.key.key == ']'
+                        )
+                    ) {
+                        if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == '[') {
+                            joy_emulation_side = 0;
+                            printf("Keyboard switched to Left Joystick\n");
+                        }
+                        if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == ']') {
+                            joy_emulation_side = 1;
+                            printf("Keyboard switched to Right Joystick\n");
+                        }
+                        if (joy_emulation_side == 1) {
+                            switch(event.key.key) {
+                                case SDLK_LEFT: machine.adc->input_joy_2 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
+                                case SDLK_RIGHT: machine.adc->input_joy_2 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
+                                case SDLK_UP: machine.adc->input_joy_3 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
+                                case SDLK_DOWN: machine.adc->input_joy_3 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
+                                case SDLK_RETURN:
+                                case SDLK_SPACE:
+                                    if (event.type == SDL_EVENT_KEY_DOWN) machine.keyboard->other_inputs &= 0b11111101;
+                                    else machine.keyboard->other_inputs |= 0b10;
+                                    mc6821_peripheral_input(PIA(machine.pia1), 0, machine.keyboard->other_inputs, 0b10);
+                                    break;
+                            }
+                        } else {
+                            switch(event.key.key) {
+                                // left
+                                case SDLK_LEFT: machine.adc->input_joy_0 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
+                                case SDLK_RIGHT: machine.adc->input_joy_0 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
+                                case SDLK_UP: machine.adc->input_joy_1 = event.type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
+                                case SDLK_DOWN: machine.adc->input_joy_1 = event.type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
+                                case SDLK_RETURN:
+                                case SDLK_SPACE:
+                                    if (event.type == SDL_EVENT_KEY_DOWN) machine.keyboard->other_inputs &= 0b11111110;
+                                    else machine.keyboard->other_inputs |= 0b1;
+                                    mc6821_peripheral_input(PIA(machine.pia1), 0, machine.keyboard->other_inputs, 0b1);
+                                    break;
+                            }
+                        }
+                        // printf("event.key.key=%d \n", event.key.key);
+                } else {
+                    if ((event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) && !(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT))) {
+                        if ((!is_1st_key_event_processed || machine.keyboard->columns_used > 24))
+                            is_1st_key_event_processed += keyboard_set_key(machine.keyboard, &event.key, event.type == SDL_EVENT_KEY_DOWN ? 1 : 0);
+                        else
+                            keyboard_buffer_push(&event);
+                    }
+                }
+
+                if (event.type == SDL_EVENT_KEY_DOWN && event.key.mod & SDL_KMOD_CTRL && event.key.key == SDLK_V) {
+                    clipboard_copy();
+                }
+
+                if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F9) {
+                    SDL_ShowOpenFileDialog(rom_selection_cb, cartridge, machine.window, NULL, 0, "roms/cartridges", false);
+                }
+                if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F10) {
+                    p._dump_execution = 1;
+                }
+                if (event.type == SDL_EVENT_KEY_UP && event.key.key == SDLK_F10) {
+                    p._dump_execution = 0;
+                }
+                if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F5) {
+                    joy_emulation = !joy_emulation;
+                    printf("Set Joy Emulator %d\n", joy_emulation);
+                }
             }
 
-            if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F9) {
-                SDL_ShowOpenFileDialog(rom_selection_cb, cartridge, machine.window, NULL, 0, "roms/cartridges", false);
-            }
-            if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F10) {
-                p._dump_execution = 1;
-            }
-            if (event.type == SDL_EVENT_KEY_UP && event.key.key == SDLK_F10) {
-                p._dump_execution = 0;
-            }
-            if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F5) {
-                joy_emulation = !joy_emulation;
-                printf("Set Joy Emulator %d\n", joy_emulation);
-            }
+            time_ns = nanos();
         }
     }
 
