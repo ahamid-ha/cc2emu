@@ -155,6 +155,17 @@ int bus_load_rom(struct bus_adaptor *rom, const char *path) {
     return 0;
 }
 
+void bus_unload_rom(struct bus_adaptor *rom) {
+    if (rom->data) free(rom->data);
+    rom->data = 0;
+    rom->start = 0;
+    rom->end = 0;
+}
+
+void bus_ram_reset(struct bus_adaptor *ram) {
+    memset(ram->data, 0, ram->end - ram->start + 1);
+}
+
 struct bus_adaptor * bus_create_ram(uint16_t size, uint16_t start) {
     struct bus_adaptor *adaptor = malloc(sizeof(struct bus_adaptor));
     void *data = malloc(size);

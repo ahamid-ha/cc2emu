@@ -280,7 +280,10 @@ uint64_t video_process_next(struct video_status *v) {
 void _video_mode_change_cb(struct mc6821_status *pia, int peripheral_address, uint8_t value, void *data) {
     struct video_status *v = (struct video_status *)data;
     v->vdg_op_mode = value >> 3;
-    v->mode_change_count++;
+}
+
+void video_reset(struct video_status *v) {
+    v->vdg_op_mode = 0;
 }
 
 struct video_status *video_initialize(struct sam_status *sam, struct mc6821_status *pia, uint8_t *memory, SDL_Renderer* renderer) {

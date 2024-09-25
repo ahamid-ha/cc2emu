@@ -17,8 +17,6 @@ struct video_status {
     SDL_Renderer* renderer;
     SDL_Texture* texture;
 
-    int mode_change_count;
-
     int _h_time_ns;   // to track the time of current HS
     int signal_fs;    // field sync
     int h_sync;
@@ -30,6 +28,7 @@ struct video_status {
 };
 
 struct video_status *video_initialize(struct sam_status *sam, struct mc6821_status *pia, uint8_t *memory, SDL_Renderer* renderer);
+void video_reset(struct video_status *v);
 
 uint64_t video_start_field(struct video_status *v);
 void video_end_field(struct video_status *v);

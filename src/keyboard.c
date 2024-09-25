@@ -27,6 +27,13 @@ void _keyboard_column_change_cb(struct mc6821_status *pia, int peripheral_addres
     mc6821_peripheral_input(pia, 0, value, 0x7f);
 }
 
+void keyboard_reset(struct keyboard_status *ks) {
+    memset(ks->keyboard_keys_status, 0, sizeof(ks->keyboard_keys_status));
+    ks->other_inputs = 0xff;
+    ks->last_columns_value = 0;
+    ks->columns_used = 0;
+}
+
 struct keyboard_status *keyboard_initialize(struct mc6821_status *pia) {
     struct keyboard_status *ks=malloc(sizeof(struct keyboard_status));
     memset(ks, 0, sizeof(struct keyboard_status));

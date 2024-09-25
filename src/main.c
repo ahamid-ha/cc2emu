@@ -18,10 +18,10 @@ struct {
     SDL_Window* window;
     SDL_Renderer* renderer;
 
-    struct processor_state p;
+    struct processor_state *p;
     struct bus_adaptor *basic_rom;
     struct bus_adaptor *extended_rom;
-    struct bus_adaptor *cartridg;
+    struct bus_adaptor *cartridge;
     struct bus_adaptor *ram;
     struct bus_adaptor *pia1;
     struct bus_adaptor *pia2;
@@ -30,6 +30,17 @@ struct {
     struct video_status *video;
     struct adc_status *adc;
 }machine;
+
+void machine_reset() {
+    bus_ram_reset(machine.ram);
+    bus_reset_pia(PIA(machine.pia1));
+    bus_reset_pia(PIA(machine.pia2));
+    sam_reset(SAM(machine.sam));
+    keyboard_reset(machine.keyboard);
+    video_reset(machine.video);
+    adc_reset(machine.adc);
+    processor_reset(machine.p);
+}
 
 
 #define SEC_TO_NS(sec) ((sec)*1000000000)
@@ -129,10 +140,8 @@ static void SDLCALL rom_selection_cb(void* data, const char* const* filelist, in
     } else if (str_ends_with(rom_path, ".bin")) {
         bus_load_ram(cartridge, rom_path, 0x4000);
     } else {
+        machine_reset();
         bus_load_rom(cartridge, rom_path);
-
-        mc6821_interrupt_1_input(PIA(machine.pia2), 1, 1);
-        mc6821_interrupt_1_input(PIA(machine.pia2), 1, 0);
     }
 }
 
@@ -165,6 +174,7 @@ int main(int argc, char* argv[]) {
     bool running = true;
 
     struct processor_state p;
+    machine.p = &p;
     processor_init(&p);
 
     struct bus_adaptor *basic_rom = bus_create_rom(0xA000);
@@ -220,6 +230,11 @@ int main(int argc, char* argv[]) {
                 // printf("machine.video->h_sync=%d\n", machine.video->h_sync);
                 mc6821_interrupt_1_input(PIA(machine.pia1), 0, machine.video->h_sync);
                 mc6821_interrupt_1_input(PIA(machine.pia1), 1, machine.video->signal_fs);
+
+                if (cartridge->data) {
+                    mc6821_interrupt_1_input(PIA(machine.pia2), 1, 1);
+                    mc6821_interrupt_1_input(PIA(machine.pia2), 1, 0);
+                }
             }
 
             p._irq = mc6821_interrupt_state(PIA(machine.pia1));  // TODO: should be done in a better way
@@ -309,10 +324,8 @@ int main(int argc, char* argv[]) {
                     SDL_ShowOpenFileDialog(rom_selection_cb, cartridge, machine.window, NULL, 0, "roms/cartridges", false);
                 }
                 if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F10) {
-                    p._dump_execution = 1;
-                }
-                if (event.type == SDL_EVENT_KEY_UP && event.key.key == SDLK_F10) {
-                    p._dump_execution = 0;
+                    machine_reset();
+                    bus_unload_rom(cartridge);
                 }
                 if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F5) {
                     joy_emulation = !joy_emulation;

@@ -26,6 +26,8 @@ void processor_register_bus_adaptor(struct bus_register *b, struct bus_adaptor *
 struct bus_adaptor * bus_create_rom(uint16_t start);
 int bus_load_ram(struct bus_adaptor *ram, const char *path, int pos);
 int bus_load_rom(struct bus_adaptor *rom, const char *path);
+void bus_unload_rom(struct bus_adaptor *rom);
 struct bus_adaptor * bus_create_ram(uint16_t size, uint16_t start);
+void bus_ram_reset(struct bus_adaptor *ram);
 struct bus_adaptor * bus_create_pia1();
 struct bus_adaptor * bus_create_pia2();

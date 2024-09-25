@@ -157,6 +157,15 @@ uint8_t mc6821_read_c2(struct mc6821_status *p, int peripheral_address) {
     return 0;
 }
 
+void bus_reset_pia(struct mc6821_status *pia) {
+    pia->a.cr = 0;
+    pia->a.ddr = 0;
+    pia->a.pr = 0;
+    pia->b.cr = 0;
+    pia->b.ddr = 0;
+    pia->b.pr = 0;
+}
+
 struct bus_adaptor * bus_create_pia1() {
     struct bus_adaptor *adaptor = malloc(sizeof(struct bus_adaptor));
     struct mc6821_status *data = malloc(sizeof(struct mc6821_status));

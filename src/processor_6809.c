@@ -21,6 +21,16 @@ void processor_store_16(struct processor_state *p, uint16_t addr, uint16_t data)
 }
 
 void processor_reset(struct processor_state *p) {
+    p->CC = 0;
+    p->_stopped = 0;
+    p->_dump_execution = 0;
+    p->_irq = 0;
+    p->_irq_active_time_nano = 0;
+    p->_firq = 0;
+    p->_nmi = 0;
+    p->_sync = 0;
+    p->_cwai = 0;
+
     p->DP = 0;
     p->F = 1;
     p->I = 1;

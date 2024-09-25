@@ -62,6 +62,7 @@ struct sam_status {
 #define SAM(p) (struct sam_status *)p->data
 
 struct bus_adaptor * bus_create_sam();
+void sam_reset(struct sam_status *sam);
 void sam_vdg_hs_reset(struct sam_status *sam);
 void sam_vdg_fs_reset(struct sam_status *sam);
 uint16_t sam_get_vdg_address(struct sam_status *sam);

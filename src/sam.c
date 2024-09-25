@@ -68,6 +68,9 @@ void _bus_sam_write(struct bus_adaptor *p, uint16_t addr, uint8_t value) {
     }
 }
 
+void sam_reset(struct sam_status *sam) {
+    memset(sam, 0, sizeof(struct sam_status));
+}
 
 struct bus_adaptor * bus_create_sam() {
     struct bus_adaptor *adaptor = malloc(sizeof(struct bus_adaptor));

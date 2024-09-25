@@ -98,16 +98,37 @@ void _adc_sound_cb(struct mc6821_status *pia, int peripheral_address, uint8_t va
     }
 }
 
+void adc_reset(struct adc_status *adc) {
+    if (adc->cassette_audio_buf) {
+        SDL_free(adc->cassette_audio_buf);
+        adc->cassette_audio_buf = NULL;
+    }
+
+    adc->input_joy_0 = 2.5;
+    adc->input_joy_1 = 2.5;
+    adc->input_joy_2 = 2.5;
+    adc->input_joy_3 = 2.5;
+
+    adc->adc_level = 0;
+    adc->switch_selection = 0;
+
+    adc->sound_enabled = 0;
+    adc->sound_samples_size = 0;
+    adc->next_sound_sample_time_ns = 0;
+
+    adc->cassette_motor = 0;
+    adc->cassette_audio_len = 0;
+    adc->cassette_audio_location = 0;
+    adc->next_cassette_sample_time_ns = 0;
+}
+
 struct adc_status *adc_initialize(struct mc6821_status *pia1, struct mc6821_status *pia2) {
     struct adc_status *adc=malloc(sizeof(struct adc_status));
     memset(adc, 0, sizeof(struct adc_status));
     adc->pia1 = pia1;
     adc->pia2 = pia2;
 
-    adc->input_joy_0 = 2.5;
-    adc->input_joy_1 = 2.5;
-    adc->input_joy_2 = 2.5;
-    adc->input_joy_3 = 2.5;
+    adc_reset(adc);
 
     mc6821_register_c2_cb(pia1, 0, (mc6821_cb)_adc_source_a_change_cb, adc);
     mc6821_register_c2_cb(pia1, 1, (mc6821_cb)_adc_source_b_change_cb, adc);
