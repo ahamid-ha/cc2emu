@@ -31,7 +31,6 @@ struct mc6821_status;
 typedef void (*mc6821_cb)(struct mc6821_status *pia, int peripheral_address, uint8_t out_value, void *data);
 
 struct mc6821_status {
-    int name;
     struct mc6821_peripheral_status a;
     struct mc6821_peripheral_status b;
 
@@ -44,8 +43,8 @@ struct mc6821_status {
     void *c2_cb_data[2];
 };
 
-#define PIA(p) ((struct mc6821_status*)p->data)
 
+struct mc6821_status *pia_create();
 void mc6821_peripheral_input(struct mc6821_status *p, int peripheral_address, uint8_t value, uint8_t mask);
 int mc6821_register_cb(struct mc6821_status *p, int peripheral_address, mc6821_cb cb, void *data);
 void mc6821_register_c2_cb(struct mc6821_status *p, int peripheral_address, mc6821_cb cb, void *data);
@@ -54,5 +53,7 @@ void mc6821_interrupt_2_input(struct mc6821_status *p, int peripheral_address, u
 int mc6821_interrupt_state(struct mc6821_status *p);
 uint8_t mc6821_read_c2(struct mc6821_status *p, int peripheral_address);
 void bus_reset_pia(struct mc6821_status *pia);
+uint8_t mc6821_read_register(struct mc6821_status *p, int address);
+void mc6821_write_register(struct mc6821_status *p, uint16_t address, uint8_t value);
 
 #endif

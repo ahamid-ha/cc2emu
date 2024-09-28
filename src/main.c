@@ -19,23 +19,16 @@ struct {
     SDL_Renderer* renderer;
 
     struct processor_state *p;
-    struct bus_adaptor *basic_rom;
-    struct bus_adaptor *extended_rom;
-    struct bus_adaptor *cartridge;
-    struct bus_adaptor *ram;
-    struct bus_adaptor *pia1;
-    struct bus_adaptor *pia2;
-    struct bus_adaptor *sam;
+    struct sam_status *sam;
     struct keyboard_status *keyboard;
     struct video_status *video;
     struct adc_status *adc;
 }machine;
 
 void machine_reset() {
-    bus_ram_reset(machine.ram);
-    bus_reset_pia(PIA(machine.pia1));
-    bus_reset_pia(PIA(machine.pia2));
-    sam_reset(SAM(machine.sam));
+    bus_reset_pia(machine.sam->pia1);
+    bus_reset_pia(machine.sam->pia2);
+    sam_reset(machine.sam);
     keyboard_reset(machine.keyboard);
     video_reset(machine.video);
     adc_reset(machine.adc);
@@ -133,15 +126,12 @@ static void SDLCALL rom_selection_cb(void* data, const char* const* filelist, in
         return;
     }
 
-    struct bus_adaptor *cartridge=(struct bus_adaptor *)data;
     const char *rom_path = *filelist;
     if (str_ends_with(rom_path, ".wav")) {
         adc_load_cassette(machine.adc, rom_path);
-    } else if (str_ends_with(rom_path, ".bin")) {
-        bus_load_ram(cartridge, rom_path, 0x4000);
     } else {
         machine_reset();
-        bus_load_rom(cartridge, rom_path);
+        sam_load_rom(machine.sam, 2, rom_path);
     }
 }
 
@@ -177,34 +167,21 @@ int main(int argc, char* argv[]) {
     machine.p = &p;
     processor_init(&p);
 
-    struct bus_adaptor *basic_rom = bus_create_rom(0xA000);
-    bus_load_rom(basic_rom, "roms/BASIC.ROM");
-    processor_register_bus_adaptor(&p.bus, basic_rom);
 
-    struct bus_adaptor *extended_rom = bus_create_rom(0x8000);
-    bus_load_rom(extended_rom, "roms/extbas11.rom");
-    processor_register_bus_adaptor(&p.bus, extended_rom);
-
-    struct bus_adaptor *cartridge = bus_create_rom(0xC000);
-    processor_register_bus_adaptor(&p.bus, cartridge);
-
-    machine.ram = bus_create_ram(32 * 1024, 0x0000);
-    processor_register_bus_adaptor(&p.bus, machine.ram);
-    uint8_t *memory_buffer = (uint8_t *)machine.ram->data;
-
-    machine.pia1 = bus_create_pia1();
-    processor_register_bus_adaptor(&p.bus, machine.pia1);
-
-    machine.pia2 = bus_create_pia2();
-    processor_register_bus_adaptor(&p.bus, machine.pia2);
+    // struct bus_adaptor *disk = bus_create_rom(0xC000);
+    // bus_load_rom(disk, "roms/Disk21.bin");
+    // processor_register_bus_adaptor(&p.bus, disk);
 
     machine.sam = bus_create_sam();
-    processor_register_bus_adaptor(&p.bus, machine.sam);
+    p.bus = machine.sam;
+    sam_load_rom(machine.sam, 1, "roms/BASIC.ROM");
+    sam_load_rom(machine.sam, 0, "roms/extbas11.rom");
+    machine.sam->pia1 = pia_create();
+    machine.sam->pia2 = pia_create();
 
-    machine.keyboard = keyboard_initialize(PIA(machine.pia1));
-    machine.video = video_initialize(SAM(machine.sam), PIA(machine.pia2), memory_buffer, machine.renderer);
-
-    machine.adc = adc_initialize(PIA(machine.pia1), PIA(machine.pia2));
+    machine.keyboard = keyboard_initialize(machine.sam->pia1);
+    machine.video = video_initialize(machine.sam, machine.sam->pia2, machine.renderer);
+    machine.adc = adc_initialize(machine.sam->pia1, machine.sam->pia2);
 
     processor_reset(&p);
 
@@ -228,17 +205,17 @@ int main(int argc, char* argv[]) {
                 next_video_call_after_ns = video_process_next(machine.video);
                 next_video_call += next_video_call_after_ns;
                 // printf("machine.video->h_sync=%d\n", machine.video->h_sync);
-                mc6821_interrupt_1_input(PIA(machine.pia1), 0, machine.video->h_sync);
-                mc6821_interrupt_1_input(PIA(machine.pia1), 1, machine.video->signal_fs);
+                mc6821_interrupt_1_input(machine.sam->pia1, 0, machine.video->h_sync);
+                mc6821_interrupt_1_input(machine.sam->pia1, 1, machine.video->signal_fs);
 
-                if (cartridge->data) {
-                    mc6821_interrupt_1_input(PIA(machine.pia2), 1, 1);
-                    mc6821_interrupt_1_input(PIA(machine.pia2), 1, 0);
+                if (machine.sam->rom_load_status[2]) {
+                    mc6821_interrupt_1_input(machine.sam->pia2, 1, 1);
+                    mc6821_interrupt_1_input(machine.sam->pia2, 1, 0);
                 }
             }
 
-            p._irq = mc6821_interrupt_state(PIA(machine.pia1));  // TODO: should be done in a better way
-            p._firq = mc6821_interrupt_state(PIA(machine.pia2));  // TODO: should be done in a better way
+            p._irq = mc6821_interrupt_state(machine.sam->pia1);  // TODO: should be done in a better way
+            p._firq = mc6821_interrupt_state(machine.sam->pia2);  // TODO: should be done in a better way
         }
         video_end_field(machine.video);
 
@@ -288,7 +265,7 @@ int main(int argc, char* argv[]) {
                                 case SDLK_SPACE:
                                     if (event.type == SDL_EVENT_KEY_DOWN) machine.keyboard->other_inputs &= 0b11111101;
                                     else machine.keyboard->other_inputs |= 0b10;
-                                    mc6821_peripheral_input(PIA(machine.pia1), 0, machine.keyboard->other_inputs, 0b10);
+                                    mc6821_peripheral_input(machine.sam->pia1, 0, machine.keyboard->other_inputs, 0b10);
                                     break;
                             }
                         } else {
@@ -302,7 +279,7 @@ int main(int argc, char* argv[]) {
                                 case SDLK_SPACE:
                                     if (event.type == SDL_EVENT_KEY_DOWN) machine.keyboard->other_inputs &= 0b11111110;
                                     else machine.keyboard->other_inputs |= 0b1;
-                                    mc6821_peripheral_input(PIA(machine.pia1), 0, machine.keyboard->other_inputs, 0b1);
+                                    mc6821_peripheral_input(machine.sam->pia1, 0, machine.keyboard->other_inputs, 0b1);
                                     break;
                             }
                         }
@@ -321,11 +298,11 @@ int main(int argc, char* argv[]) {
                 }
 
                 if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F9) {
-                    SDL_ShowOpenFileDialog(rom_selection_cb, cartridge, machine.window, NULL, 0, "roms/cartridges", false);
+                    SDL_ShowOpenFileDialog(rom_selection_cb, NULL, machine.window, NULL, 0, "roms/cartridges", false);
                 }
                 if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F10) {
                     machine_reset();
-                    bus_unload_rom(cartridge);
+                    machine.sam->rom_load_status[2] = 0;
                 }
                 if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F5) {
                     joy_emulation = !joy_emulation;

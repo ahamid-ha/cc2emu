@@ -1,4 +1,3 @@
-#include "bus.h"
 #include "mc6821.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -141,16 +140,6 @@ int mc6821_register_cb(struct mc6821_status *p, int peripheral_address, mc6821_c
     return 1;
 }
 
-uint8_t _bus_pia_read(struct bus_adaptor *p, uint16_t addr) {
-    struct mc6821_status *data = (struct mc6821_status *)p->data;
-    return mc6821_read_register(data, addr);
-}
-
-void _bus_pia_write(struct bus_adaptor *p, uint16_t addr, uint8_t value) {
-    struct mc6821_status *data = (struct mc6821_status *)p->data;
-    mc6821_write_register(data, addr, value);
-}
-
 uint8_t mc6821_read_c2(struct mc6821_status *p, int peripheral_address) {
     struct mc6821_peripheral_status *ps = peripheral(peripheral_address);
     if (ps->c2_output) return ps->c2_enable;
@@ -166,38 +155,9 @@ void bus_reset_pia(struct mc6821_status *pia) {
     pia->b.pr = 0;
 }
 
-struct bus_adaptor * bus_create_pia1() {
-    struct bus_adaptor *adaptor = malloc(sizeof(struct bus_adaptor));
-    struct mc6821_status *data = malloc(sizeof(struct mc6821_status));
-    memset(data, 0, sizeof(struct mc6821_status));
+struct mc6821_status *pia_create() {
+    struct mc6821_status *pia = malloc(sizeof(struct mc6821_status));
+    memset(pia, 0, sizeof(struct mc6821_status));
 
-    data->name = 1;
-
-    adaptor->start = 0xFF00;
-    adaptor->end = 0xFF1F;
-    adaptor->data = data;
-    adaptor->load_8 = _bus_pia_read;
-    adaptor->store_8 = _bus_pia_write;
-
-    printf("Created PIA 1 start=%04X end=%04X\n", adaptor->start, adaptor->end);
-
-    return adaptor;
-}
-
-struct bus_adaptor * bus_create_pia2() {
-    struct bus_adaptor *adaptor = malloc(sizeof(struct bus_adaptor));
-    struct mc6821_status *data = malloc(sizeof(struct mc6821_status));
-    memset(data, 0, sizeof(struct mc6821_status));
-
-    data->name = 2;
-
-    adaptor->start = 0xFF20;
-    adaptor->end = 0xFF33;
-    adaptor->data = data;
-    adaptor->load_8 = _bus_pia_read;
-    adaptor->store_8 = _bus_pia_write;
-
-    printf("Created PIA 2 start=%04X end=%04X\n", adaptor->start, adaptor->end);
-
-    return adaptor;
+    return pia;
 }

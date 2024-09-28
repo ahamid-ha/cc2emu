@@ -146,7 +146,7 @@ uint64_t video_process_next(struct video_status *v) {
         long byte_time;
         int pixels;
         int y = v->field_row_number - (13 + 25);
-        uint8_t data = v->memory[sam_get_vdg_address(v->sam)];
+        uint8_t data = sam_get_vdg_data(v->sam);
         sam_vdg_increment(v->sam);
         if (v->enable_graphics) {
             // graphics
@@ -286,10 +286,9 @@ void video_reset(struct video_status *v) {
     v->vdg_op_mode = 0;
 }
 
-struct video_status *video_initialize(struct sam_status *sam, struct mc6821_status *pia, uint8_t *memory, SDL_Renderer* renderer) {
+struct video_status *video_initialize(struct sam_status *sam, struct mc6821_status *pia, SDL_Renderer* renderer) {
     struct video_status *v=malloc(sizeof(struct video_status));
     memset(v, 0, sizeof(struct video_status));
-    v->memory = memory;
     v->vdg_op_mode = 0;
     v->sam = sam;
 

@@ -4,8 +4,8 @@
 #include "processor_6809.h"
 
 #define add_cycles(t) p->_virtual_time_nano += t * cycle_nano
-#define processor_load_8(p, addr) bus_read_8(&p->bus, addr)
-#define processor_store_8(p, addr, value) bus_write_8(&p->bus, addr, value)
+#define processor_load_8(p, addr) sam_read(p->bus, addr)
+#define processor_store_8(p, addr, value) sam_write(p->bus, addr, value)
 
 uint16_t processor_load_16(struct processor_state *p, uint16_t addr) {
     uint16_t msb = (uint16_t)processor_load_8(p, addr);
@@ -39,7 +39,6 @@ void processor_reset(struct processor_state *p) {
 
 void processor_init(struct processor_state *p) {
     memset(p, 0, sizeof(struct processor_state));
-    processor_reset(p);
 }
 
 #define _bit(x) (x?'1':'0')

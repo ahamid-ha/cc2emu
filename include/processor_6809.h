@@ -1,5 +1,5 @@
 #include <inttypes.h>
-#include <bus.h>
+#include <sam.h>
 
 
 #define cycle_nano 279 * 4
@@ -36,7 +36,7 @@ struct processor_state {
         uint8_t CC;
     };
 
-    struct bus_register bus;
+    struct sam_status *bus;
 
     uint64_t _virtual_time_nano;
     int _stopped;

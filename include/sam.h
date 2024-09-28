@@ -1,4 +1,5 @@
 #include <inttypes.h>
+#include <mc6821.h>
 
 #ifndef __SAM_H__
 #define __SAM_H__
@@ -57,15 +58,29 @@ struct sam_status {
 
     int _vdg_multiplier_x;
     int _vdg_multiplier_y;
+
+    uint8_t ram[0x10000];
+    uint8_t rom0[0x2000];
+    uint8_t rom1[0x2000];
+    uint8_t rom2[0x3f00];
+    int rom_load_status[3];
+
+    struct mc6821_status *pia1;
+    struct mc6821_status *pia2;
+
+    void *pia_cartridge;
+    uint8_t (*pia_cartridge_read)(void *p, uint16_t addr);
+    void (*pia_cartridge_write)(void *p, uint16_t addr, uint8_t value);
 };
 
-#define SAM(p) (struct sam_status *)p->data
-
-struct bus_adaptor * bus_create_sam();
+struct sam_status * bus_create_sam();
 void sam_reset(struct sam_status *sam);
+uint8_t sam_read(struct sam_status *sam, uint16_t addr);
+void sam_write(struct sam_status *sam, uint16_t addr, uint8_t data);
+int sam_load_rom(struct sam_status *sam, int rom_no, const char *path);
 void sam_vdg_hs_reset(struct sam_status *sam);
 void sam_vdg_fs_reset(struct sam_status *sam);
-uint16_t sam_get_vdg_address(struct sam_status *sam);
+uint8_t sam_get_vdg_data(struct sam_status *sam);
 void sam_vdg_increment(struct sam_status *sam);
 
 #endif

@@ -5,7 +5,7 @@
 
 struct video_status {
     struct sam_status *sam;
-    uint8_t *memory;
+
     union {
         struct {
             unsigned css:1;
@@ -27,7 +27,7 @@ struct video_status {
     int _pitch;
 };
 
-struct video_status *video_initialize(struct sam_status *sam, struct mc6821_status *pia, uint8_t *memory, SDL_Renderer* renderer);
+struct video_status *video_initialize(struct sam_status *sam, struct mc6821_status *pia, SDL_Renderer* renderer);
 void video_reset(struct video_status *v);
 
 uint64_t video_start_field(struct video_status *v);
