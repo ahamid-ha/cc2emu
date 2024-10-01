@@ -1,0 +1,284 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <errno.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <inttypes.h>
+#include "disk_drive.h"
+
+#define BYTE_RW_DELAY_NS 32000
+
+struct disk_drive_status *disk_drive_create(void) {
+    struct disk_drive_status *drive = malloc(sizeof(struct disk_drive_status));
+    memset(drive, 0, sizeof(struct disk_drive_status));
+
+    // char *path = "roms/disks/games/Atom (Tandy)/ATOM.DSK";
+    char *path1 = "roms/disks/os/OS-9 Level 1 v02.01.00 (Tandy) (OS-9) (6847T1)/OS9-L1V201M.DSK";
+    char *path2 = "roms/disks/os/OS-9 Level 1 v02.01.00 (Tandy) (OS-9) (6847T1)/OS9-L1V201B.DSK";
+
+    disk_drive_load_disk(drive, 0, path1);
+    disk_drive_load_disk(drive, 1, path2);
+
+    return drive;
+}
+
+void disk_drive_process_next(struct disk_drive_status *drive) {
+    drive->next_command_after_nano = 0;
+    if (!drive->_next_command) {
+        return;
+    }
+    void (*next_command)(struct disk_drive_status *drive) = drive->_next_command;
+    drive->_next_command = NULL;
+
+    next_command(drive);
+}
+
+void _end_command(struct disk_drive_status *drive) {
+    drive->status_1.BUSY = 0;
+    drive->next_command_after_nano = 0;
+    drive->_next_command = 0;
+    drive->HALT = 0;
+    if (drive->DDEN) {
+        drive->irq = 1;
+    }
+}
+
+void _schedule_next(struct disk_drive_status *drive, uint64_t next_command_after_nano, void (*next_command)(struct disk_drive_status *drive)) {
+    drive->status_1.BUSY = 1;
+    drive->next_command_after_nano = next_command_after_nano;
+    drive->_next_command = next_command;
+}
+
+void _clear_status_1(struct disk_drive_status *drive) {
+    drive->status_1.BUSY = 1;
+    drive->status_1.INDEX = 0;
+    drive->status_1.CRC = 0;
+    drive->status_1.SEEK_ERROR = 0;
+    drive->status_1.HEAD_LOADED = drive->command & 0x8 ? 1 : 0;
+    drive->status_1.NOT_READY = 0;
+    drive->status_1.TRACK00 = drive->track == 0 ? 1 : 0;
+}
+
+void _clear_status_2(struct disk_drive_status *drive) {
+    drive->status_2_3.BUSY = 1;
+    drive->status_2_3.DATA_REQUEST = 0;
+    drive->status_2_3.LOST_DATA = 0;
+    drive->status_2_3.CRC = 0;
+    drive->status_2_3.RNF = 0;
+    drive->status_2_3.RECORD_TYPE__FAULT = 0;
+    drive->status_2_3.NOT_READY = 0;
+}
+
+void _command_seek(struct disk_drive_status *drive) {
+    _clear_status_1(drive);
+    printf("Drive command seek, target=%d, current=%d\n", drive->data, drive->track);
+    if (drive->track >= drive->tracks) {
+        drive->status_1.SEEK_ERROR = 1;
+        _end_command(drive);
+        return;
+    }
+    if (drive->track == drive->data) {
+        _end_command(drive);
+        return;
+    }
+
+    if (drive->track > drive->data) {
+        drive->track--;
+        drive->step_direction=1;
+    } else {
+        drive->track++;
+        drive->step_direction=-1;
+    }
+
+    // TODO: correct the time based on the stepping rate
+    _schedule_next(drive, 5000000, _command_seek);
+}
+
+uint8_t *_get_drive_data(struct disk_drive_status *drive) {
+    if (drive->DRIVE_SELECT_0) return drive->_drive_data[0];
+    if (drive->DRIVE_SELECT_1) return drive->_drive_data[1];
+    if (drive->DRIVE_SELECT_2) return drive->_drive_data[2];
+    if (drive->DRIVE_SELECT_3) return drive->_drive_data[3];
+    return NULL;
+}
+
+void _command_read_sector(struct disk_drive_status *drive) {
+    unsigned old_data_request = drive->status_2_3.DATA_REQUEST;
+    _clear_status_2(drive);
+    uint8_t *_drive_data = _get_drive_data(drive);
+
+    if (drive->sector_data_pos > drive->sector_length) {
+        if ((drive->command & 0x10) == 0) {
+            // single sector
+            _end_command(drive);
+            return;
+        }
+        drive->sector_data_pos = 0;
+        drive->sector++;
+    }
+
+    if (!_drive_data ||
+            drive->sector > drive->sectors ||
+            !drive->sector ||
+            drive->track >= drive->tracks) {
+        drive->status_2_3.RNF = 1;
+        _end_command(drive);
+        return;
+    }
+
+    drive->data = _drive_data[(((int)drive->track) * drive->sectors + (int)drive->sector - 1) * drive->sector_length + drive->sector_data_pos];
+    drive->sector_data_pos++;
+    drive->status_2_3.DATA_REQUEST = 1;
+    if (old_data_request) {
+        drive->status_2_3.LOST_DATA = 1;
+        printf("Data lost\n");
+    }
+    _schedule_next(drive, BYTE_RW_DELAY_NS, _command_read_sector);
+}
+
+void _start_command(struct disk_drive_status *drive) {
+    if ((drive->command & 0xf0) == 0) {
+        // restore
+        printf("Drive command restore\n");
+    } else if ((drive->command & 0xf0) == 0x10) {
+        // seek
+        _command_seek(drive);
+    } else if ((drive->command & 0xe0) == 0x20) {
+        // step
+        printf("Drive command step\n");
+    } else if ((drive->command & 0xe0) == 0x40) {
+        // step-in
+        printf("Drive command step-in\n");
+    } else if ((drive->command & 0xe0) == 0x60) {
+        // step-out
+        printf("Drive command step-out\n");
+    } else if ((drive->command & 0xe0) == 0x80) {
+        // read sector
+        printf("Drive command read sector\n");
+        drive->sector_data_pos = 0;
+        _clear_status_2(drive);
+        _schedule_next(drive, BYTE_RW_DELAY_NS * 55, _command_read_sector);
+    } else if ((drive->command & 0xe0) == 0xA0) {
+        // write sector
+        printf("Drive command write sector\n");
+    } else if ((drive->command & 0xf0) == 0xC0) {
+        // read address
+        printf("Drive command read address\n");
+    } else if ((drive->command & 0xf0) == 0xE0) {
+        // read track
+        printf("Drive command read track\n");
+    } else if ((drive->command & 0xf0) == 0xF0) {
+        // write track
+        printf("Drive command write track\n");
+    } else if ((drive->command & 0xf0) == 0xD0) {
+        // force interrupt
+        printf("Drive command force interrupt\n");
+
+        drive->_next_command = NULL;
+        drive->next_command_after_nano = 0;
+        if (!drive->status_1.BUSY) {
+            _clear_status_1(drive);
+        }
+        drive->status_1.BUSY = 0;
+
+        if ((drive->command & 0xf) != 0) {
+            if (drive->DDEN) {
+                drive->irq = 1;
+            }
+        }
+    } else {
+        printf("Unknow drive command %02x\n", drive->command);
+    }
+}
+
+uint8_t disk_drive_read_register(void *data, uint16_t address) {
+    struct disk_drive_status *drive = data;
+    // printf("disk_drive_read_register: %02x\n", address);
+
+    if ((address & 0x8) == 0) {
+        return 0xff;
+    }
+
+    address = address & 3;
+    switch (address)
+    {
+        case 0:
+            uint8_t ret = drive->status;
+            drive->irq = 0;
+            return ret;
+        case 1:
+            return drive->track;
+        case 2:
+            return drive->sector;
+        default:
+            drive->status_2_3.DATA_REQUEST = 0;
+            drive->status_2_3.LOST_DATA = 0;
+            return drive->data;
+    }
+}
+
+
+void disk_drive_write_register(void *data, uint16_t address, uint8_t value) {
+    struct disk_drive_status *drive = data;
+    // printf("disk_drive_write_register: %02x %02x\n", address, value);
+
+    if ((address & 0x8) == 0) {
+        drive->drive_select_ff = value;
+        return;
+    }
+
+    address = address & 3;
+    switch (address)
+    {
+        case 0:
+            drive->irq = 0;
+            drive->command = value;
+            _start_command(drive);
+            break;
+        case 1:
+            drive->track = value;
+            break;
+        case 2:
+            drive->sector = value;
+            break;
+        case 3:
+            // drive->DRQ = 0;
+            drive->data = value;
+            break;
+    }
+}
+
+
+int disk_drive_load_disk(struct disk_drive_status *drive, int drive_no, const char *path) {
+    int fd = open (path, O_RDWR);
+    if (fd < 0) {
+        fprintf(stderr, "Error opening file: %s : %s\n", path, strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    struct stat st;
+    if (fstat(fd,&st) < 0)
+    {
+        perror("Error in fstat");
+        exit(EXIT_FAILURE);
+    }
+
+    size_t disk_file_length = st.st_size;
+
+    if ((drive->_drive_data[drive_no] = mmap(NULL, disk_file_length, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0)) == MAP_FAILED)
+    {
+        perror("Error in mmap");
+        exit(EXIT_FAILURE);
+    }
+
+    drive->tracks = 35;
+    drive->sectors = 18;
+    drive->sector_length = 256;
+    drive->sector_data_pos = 0;
+
+    return 0;
+}

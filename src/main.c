@@ -12,6 +12,7 @@
 #include "keyboard.h"
 #include "video.h"
 #include "adc.h"
+#include "disk_drive.h"
 
 
 struct {
@@ -23,6 +24,7 @@ struct {
     struct keyboard_status *keyboard;
     struct video_status *video;
     struct adc_status *adc;
+    int cart_sense;
 }machine;
 
 void machine_reset() {
@@ -132,6 +134,7 @@ static void SDLCALL rom_selection_cb(void* data, const char* const* filelist, in
     } else {
         machine_reset();
         sam_load_rom(machine.sam, 2, rom_path);
+        machine.cart_sense = 1;
     }
 }
 
@@ -167,21 +170,24 @@ int main(int argc, char* argv[]) {
     machine.p = &p;
     processor_init(&p);
 
-
-    // struct bus_adaptor *disk = bus_create_rom(0xC000);
-    // bus_load_rom(disk, "roms/Disk21.bin");
-    // processor_register_bus_adaptor(&p.bus, disk);
-
     machine.sam = bus_create_sam();
     p.bus = machine.sam;
     sam_load_rom(machine.sam, 1, "roms/BASIC.ROM");
     sam_load_rom(machine.sam, 0, "roms/extbas11.rom");
+    sam_load_rom(machine.sam, 2, "roms/Disk21.bin");
     machine.sam->pia1 = pia_create();
     machine.sam->pia2 = pia_create();
 
     machine.keyboard = keyboard_initialize(machine.sam->pia1);
     machine.video = video_initialize(machine.sam, machine.sam->pia2, machine.renderer);
     machine.adc = adc_initialize(machine.sam->pia1, machine.sam->pia2);
+
+    struct disk_drive_status *disk_drive = disk_drive_create();
+    machine.sam->pia_cartridge = disk_drive;
+    machine.sam->pia_cartridge_read = disk_drive_read_register;
+    machine.sam->pia_cartridge_write = disk_drive_write_register;
+
+    machine.cart_sense = 0;
 
     processor_reset(&p);
 
@@ -190,6 +196,7 @@ int main(int argc, char* argv[]) {
     int joy_emulation_side = 1;  // 0: left, 1: right
 
     p._virtual_time_nano = nanos();  // sync time
+    uint64_t next_disk_drive_call = 0;
     while (running) {
         if (is_1st_key_event_processed > 4) is_1st_key_event_processed = 0;  // wait for max 4 V. scan to send next key
         if (is_1st_key_event_processed) is_1st_key_event_processed++;
@@ -208,10 +215,33 @@ int main(int argc, char* argv[]) {
                 mc6821_interrupt_1_input(machine.sam->pia1, 0, machine.video->h_sync);
                 mc6821_interrupt_1_input(machine.sam->pia1, 1, machine.video->signal_fs);
 
-                if (machine.sam->rom_load_status[2]) {
+                if (machine.cart_sense) {
                     mc6821_interrupt_1_input(machine.sam->pia2, 1, 1);
                     mc6821_interrupt_1_input(machine.sam->pia2, 1, 0);
                 }
+            }
+
+            if (next_disk_drive_call && p._virtual_time_nano >= next_disk_drive_call) {
+                disk_drive_process_next(disk_drive);
+                next_disk_drive_call = 0;
+            }
+
+            p._stopped = disk_drive->HALT && !disk_drive->status_2_3.DATA_REQUEST;
+            // if (disk_drive->HALT && !disk_drive->status_2_3.DATA_REQUEST) {
+            //     // simulate processor halt
+            //     disk_drive_process_next(disk_drive);
+            //     next_disk_drive_call = 0;
+            // }
+
+            if (disk_drive->next_command_after_nano) {
+                // schedule next call to the disk drive
+                next_disk_drive_call = p._virtual_time_nano + disk_drive->next_command_after_nano;
+                disk_drive->next_command_after_nano = 0;
+            }
+
+            if (disk_drive->irq) {
+                p._nmi = 1;
+                disk_drive->irq = 0;
             }
 
             p._irq = mc6821_interrupt_state(machine.sam->pia1);  // TODO: should be done in a better way
@@ -302,7 +332,7 @@ int main(int argc, char* argv[]) {
                 }
                 if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F10) {
                     machine_reset();
-                    machine.sam->rom_load_status[2] = 0;
+                    machine.cart_sense = 0;
                 }
                 if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F5) {
                     joy_emulation = !joy_emulation;

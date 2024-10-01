@@ -747,6 +747,7 @@ uint16_t __opcode_exg_get_value(struct processor_state *p, uint8_t code, int r_p
     }
     return 0xffff;
 }
+
 void __opcode_exg_set_value(struct processor_state *p, uint8_t code, uint16_t value) {
     switch(code & 0xf) {
         case 0b0000:
@@ -864,6 +865,45 @@ void __opcode_ror_reg(struct processor_state *p, uint8_t *reg) {
     p->C = data & 1;
     *reg = (data >> 1) | bit7;
     __update_CC_data8(p, *reg);
+}
+
+void _processor_push_state(struct processor_state *p) {
+    p->E = 1;
+    p->S -= 2;
+    processor_store_16(p, p->S, p->PC);
+    p->S -= 2;
+    processor_store_16(p, p->S, p->U);
+    p->S -= 2;
+    processor_store_16(p, p->S, p->Y);
+    p->S -= 2;
+    processor_store_16(p, p->S, p->X);
+    p->S--;
+    processor_store_8(p, p->S, p->DP);
+    p->S--;
+    processor_store_8(p, p->S, p->B);
+    p->S--;
+    processor_store_8(p, p->S, p->A);
+    p->S--;
+    processor_store_8(p, p->S, p->CC);
+
+    add_cycles(18);
+}
+
+void __opcode_swi(struct processor_state *p) {
+    _processor_push_state(p);
+    p->F = 1;
+    p->I = 1;
+    p->PC = processor_load_16(p, 0xfffa);
+}
+
+void __opcode_swi2(struct processor_state *p) {
+    _processor_push_state(p);
+    p->PC = processor_load_16(p, 0xfff4);
+}
+
+void __opcode_swi3(struct processor_state *p) {
+    _processor_push_state(p);
+    p->PC = processor_load_16(p, 0xfff2);
 }
 
 void __opcode_lsr_reg(struct processor_state *p, uint8_t *reg) {
@@ -1127,6 +1167,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         op_code(0x3B, 'RTI', 6, __opcode_rti)
         op_code_immediate8(0x3C, 'CWAI', 20, __opcode_cwai)
         op_code(0x3D, 'MUL', 11, __opcode_mul)
+        op_code(0x3f, 'SWI', 11, __opcode_swi)
 
         op_code(0x40, 'NEGA', 2, __opcode_neg_reg, &p->A)
         op_code(0x43, 'COMA', 2, __opcode_com_reg, &p->A)
@@ -1325,6 +1366,8 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         op_code_branch16(0x102E, 'LBGT', 5, bit_value(p->N) == bit_value(p->V) && p->Z == 0)
         op_code_branch16(0x102F, 'LBLE', 5, (bit_value(p->N) != bit_value(p->V)) || p->Z != 0)
 
+        op_code(0x103f, 'SWI2', 11, __opcode_swi2)
+
         op_code_immediate16(0x1083, 'CMPD', 5, __opcode_sub16, &p->D, 1)
         op_code_immediate16(0x108C, 'CMPY', 5, __opcode_sub16, &p->Y, 1)
         op_code_immediate16(0x108E, 'LDY', 4, __opcode_ldy)
@@ -1354,6 +1397,8 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
 
         op_code_extended(0x10FE, 'LDS', 7, __opcode_lds)
         op_code_extended(0x10FF, 'STS', 7, __opcode_sts)
+
+        op_code(0x113f, 'SWI3', 11, __opcode_swi3)
 
         op_code_immediate16(0x1183, 'CMPU', 5, __opcode_sub16, &p->U, 1)
         op_code_immediate16(0x118C, 'CMPS', 5, __opcode_sub16, &p->S, 1)
@@ -1398,23 +1443,8 @@ void processor_next_opcode(struct processor_state *p) {
     }
 
     if (!p->_cwai && p->_nmi) {
-        p->E = 1;
-        p->S -= 2;
-        processor_store_16(p, p->S, p->PC);
-        p->S -= 2;
-        processor_store_16(p, p->S, p->U);
-        p->S -= 2;
-        processor_store_16(p, p->S, p->Y);
-        p->S -= 2;
-        processor_store_16(p, p->S, p->X);
-        p->S--;
-        processor_store_8(p, p->S, p->DP);
-        p->S--;
-        processor_store_8(p, p->S, p->B);
-        p->S--;
-        processor_store_8(p, p->S, p->A);
-        p->S--;
-        processor_store_8(p, p->S, p->CC);
+        p->_nmi = 0;  // the interrupt is edge based
+        _processor_push_state(p);
 
         p->F = 1;
         p->I = 1;
@@ -1433,23 +1463,7 @@ void processor_next_opcode(struct processor_state *p) {
         add_cycles(9);
     }
     if (!p->_cwai && p->_irq && !p->I) {
-        p->E = 1;
-        p->S -= 2;
-        processor_store_16(p, p->S, p->PC);
-        p->S -= 2;
-        processor_store_16(p, p->S, p->U);
-        p->S -= 2;
-        processor_store_16(p, p->S, p->Y);
-        p->S -= 2;
-        processor_store_16(p, p->S, p->X);
-        p->S--;
-        processor_store_8(p, p->S, p->DP);
-        p->S--;
-        processor_store_8(p, p->S, p->B);
-        p->S--;
-        processor_store_8(p, p->S, p->A);
-        p->S--;
-        processor_store_8(p, p->S, p->CC);
+        _processor_push_state(p);
 
         p->I = 1;
         p->PC = processor_load_16(p, 0xfff8);
