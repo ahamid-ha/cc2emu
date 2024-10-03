@@ -46,7 +46,7 @@ struct disk_drive_status {
     uint64_t next_command_after_nano;
     void (*_next_command)(struct disk_drive_status *drive);
 
-    int _seek_track_target;
+    uint8_t _seek_track_target;
 
     uint8_t *_drive_data[4];
     uint8_t *is_write_protect[4];

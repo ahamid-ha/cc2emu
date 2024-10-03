@@ -12,11 +12,14 @@
 
 #define BYTE_RW_DELAY_NS 32000
 
+// emulating WD 1793
+
+
 struct disk_drive_status *disk_drive_create(void) {
     struct disk_drive_status *drive = malloc(sizeof(struct disk_drive_status));
     memset(drive, 0, sizeof(struct disk_drive_status));
 
-    // char *path = "roms/disks/games/Atom (Tandy)/ATOM.DSK";
+    // char *path1 = "roms/disks/games/Atom (Tandy)/ATOM.DSK";
     char *path1 = "roms/disks/os/OS-9 Level 1 v02.01.00 (Tandy) (OS-9) (6847T1)/OS9-L1V201M.DSK";
     char *path2 = "roms/disks/os/OS-9 Level 1 v02.01.00 (Tandy) (OS-9) (6847T1)/OS9-L1V201B.DSK";
 
@@ -40,11 +43,10 @@ void disk_drive_process_next(struct disk_drive_status *drive) {
 void _end_command(struct disk_drive_status *drive) {
     drive->status_1.BUSY = 0;
     drive->next_command_after_nano = 0;
-    drive->_next_command = 0;
+    drive->_next_command = NULL;
     drive->HALT = 0;
-    if (drive->DDEN) {
-        drive->irq = 1;
-    }
+    drive->irq = 1;
+    printf("-- Command end\n");
 }
 
 void _schedule_next(struct disk_drive_status *drive, uint64_t next_command_after_nano, void (*next_command)(struct disk_drive_status *drive)) {
@@ -71,31 +73,54 @@ void _clear_status_2(struct disk_drive_status *drive) {
     drive->status_2_3.RNF = 0;
     drive->status_2_3.RECORD_TYPE__FAULT = 0;
     drive->status_2_3.NOT_READY = 0;
+    drive->status_2_3.PROTECTED = 0;
+}
+
+uint64_t _get_stepping(struct disk_drive_status *drive) {
+    switch (drive->command & 3) {
+        case 0: return 6000000;
+        case 1: return 12000000;
+        case 2: return 20000000;
+        default: return 30000000;
+    }
 }
 
 void _command_seek(struct disk_drive_status *drive) {
-    _clear_status_1(drive);
-    printf("Drive command seek, target=%d, current=%d\n", drive->data, drive->track);
+    printf("Drive command seek, target=%d, current=%d, stepping=%ld\n", drive->_seek_track_target, drive->track, _get_stepping(drive));
     if (drive->track >= drive->tracks) {
-        drive->status_1.SEEK_ERROR = 1;
-        _end_command(drive);
-        return;
+        drive->track = drive->tracks;
     }
-    if (drive->track == drive->data) {
+
+    if (drive->track == drive->_seek_track_target) {
         _end_command(drive);
         return;
     }
 
-    if (drive->track > drive->data) {
-        drive->track--;
-        drive->step_direction=1;
-    } else {
-        drive->track++;
+    if (drive->track > drive->_seek_track_target) {
         drive->step_direction=-1;
+    } else {
+        drive->step_direction=1;
     }
 
-    // TODO: correct the time based on the stepping rate
-    _schedule_next(drive, 5000000, _command_seek);
+    if (drive->track == 0 && drive->step_direction == -1) {
+        _end_command(drive);
+        return;
+    }
+
+    drive->track += drive->step_direction;
+
+    _schedule_next(drive, _get_stepping(drive), _command_seek);
+}
+
+void _command_step(struct disk_drive_status *drive) {
+    _end_command(drive);
+
+    if (drive->command & 0x10) {
+        // u flag is set
+        drive->track += drive->step_direction;
+    }
+
+    return;
 }
 
 uint8_t *_get_drive_data(struct disk_drive_status *drive) {
@@ -104,6 +129,14 @@ uint8_t *_get_drive_data(struct disk_drive_status *drive) {
     if (drive->DRIVE_SELECT_2) return drive->_drive_data[2];
     if (drive->DRIVE_SELECT_3) return drive->_drive_data[3];
     return NULL;
+}
+
+int _get_drive_id(struct disk_drive_status *drive) {
+    if (drive->DRIVE_SELECT_0) return 0;
+    if (drive->DRIVE_SELECT_1) return 1;
+    if (drive->DRIVE_SELECT_2) return 2;
+    if (drive->DRIVE_SELECT_3) return 3;
+    return 0;
 }
 
 void _command_read_sector(struct disk_drive_status *drive) {
@@ -119,14 +152,16 @@ void _command_read_sector(struct disk_drive_status *drive) {
         }
         drive->sector_data_pos = 0;
         drive->sector++;
+
+        printf("Drive command read sector track=%d, sector=%d\n", drive->track, drive->sector);
     }
 
     if (!_drive_data ||
             drive->sector > drive->sectors ||
             !drive->sector ||
             drive->track >= drive->tracks) {
-        drive->status_2_3.RNF = 1;
         _end_command(drive);
+        drive->status_2_3.RNF = 1;
         return;
     }
 
@@ -140,31 +175,110 @@ void _command_read_sector(struct disk_drive_status *drive) {
     _schedule_next(drive, BYTE_RW_DELAY_NS, _command_read_sector);
 }
 
+void _command_write_sector(struct disk_drive_status *drive) {
+    _clear_status_2(drive);
+    uint8_t *_drive_data = _get_drive_data(drive);
+
+    if (drive->sector_data_pos > drive->sector_length) {
+        if ((drive->command & 0x10) == 0) {
+            // single sector
+            _end_command(drive);
+            return;
+        }
+        drive->sector_data_pos = -2;
+        drive->sector++;
+        _schedule_next(drive, BYTE_RW_DELAY_NS * (3 + 18 + 2), _command_write_sector);
+        return;
+    }
+
+    if (!_drive_data ||
+            drive->sector > drive->sectors ||
+            !drive->sector ||
+            drive->track >= drive->tracks) {
+        _end_command(drive);
+        drive->status_2_3.RNF = 1;
+        return;
+    }
+
+    if (drive->sector_data_pos == -2) {
+        // we are just after the CRC mark
+        // ask for data
+        drive->status_2_3.DATA_REQUEST = 1;
+        drive->sector_data_pos++;
+        _schedule_next(drive, BYTE_RW_DELAY_NS * 8, _command_write_sector);
+    }
+
+    if (drive->sector_data_pos == -1) {
+        // after the gap following the CRC
+        if (drive->status_2_3.DATA_REQUEST) {
+            printf("Data lost\n");
+            _end_command(drive);
+            drive->status_2_3.LOST_DATA = 1;
+            return;
+        }
+        drive->sector_data_pos++;
+        _schedule_next(drive, BYTE_RW_DELAY_NS * (11 + 12 + 1), _command_write_sector);
+    }
+
+    if (drive->status_2_3.DATA_REQUEST) {
+        printf("Data lost\n");
+        drive->status_2_3.LOST_DATA = 1;
+        _drive_data[(((int)drive->track) * drive->sectors + (int)drive->sector - 1) * drive->sector_length + drive->sector_data_pos] = 0;
+    } else {
+        drive->status_2_3.LOST_DATA = 0;
+        _drive_data[(((int)drive->track) * drive->sectors + (int)drive->sector - 1) * drive->sector_length + drive->sector_data_pos] = drive->data;
+    }
+    drive->sector_data_pos++;
+    drive->status_2_3.DATA_REQUEST = 1;
+    _schedule_next(drive, BYTE_RW_DELAY_NS, _command_write_sector);
+}
+
 void _start_command(struct disk_drive_status *drive) {
     if ((drive->command & 0xf0) == 0) {
         // restore
-        printf("Drive command restore\n");
+        printf("Drive command restore %02X\n", drive->command);
+        _clear_status_1(drive);
+        drive->_seek_track_target = 0;
+        _command_seek(drive);
     } else if ((drive->command & 0xf0) == 0x10) {
         // seek
+        _clear_status_1(drive);
+        drive->_seek_track_target = drive->data;
         _command_seek(drive);
     } else if ((drive->command & 0xe0) == 0x20) {
         // step
         printf("Drive command step\n");
+        _clear_status_1(drive);
+        _schedule_next(drive, _get_stepping(drive), _command_step);
     } else if ((drive->command & 0xe0) == 0x40) {
         // step-in
         printf("Drive command step-in\n");
+        _clear_status_1(drive);
+        drive->step_direction = 1;
+        _schedule_next(drive, _get_stepping(drive), _command_step);
     } else if ((drive->command & 0xe0) == 0x60) {
         // step-out
         printf("Drive command step-out\n");
+        _clear_status_1(drive);
+        drive->step_direction = -1;
+        _schedule_next(drive, _get_stepping(drive), _command_step);
     } else if ((drive->command & 0xe0) == 0x80) {
         // read sector
-        printf("Drive command read sector\n");
+        printf("Drive command read sector track=%d, sector=%d\n", drive->track, drive->sector);
         drive->sector_data_pos = 0;
         _clear_status_2(drive);
         _schedule_next(drive, BYTE_RW_DELAY_NS * 55, _command_read_sector);
     } else if ((drive->command & 0xe0) == 0xA0) {
         // write sector
         printf("Drive command write sector\n");
+        drive->sector_data_pos = -2;
+        _clear_status_2(drive);
+        if (drive->is_write_protect[_get_drive_id(drive)]) {
+            _end_command(drive);
+            drive->status_2_3.PROTECTED = 1;
+        } else {
+            _schedule_next(drive, BYTE_RW_DELAY_NS * (18 + 2), _command_write_sector);
+        }
     } else if ((drive->command & 0xf0) == 0xC0) {
         // read address
         printf("Drive command read address\n");
@@ -186,9 +300,7 @@ void _start_command(struct disk_drive_status *drive) {
         drive->status_1.BUSY = 0;
 
         if ((drive->command & 0xf) != 0) {
-            if (drive->DDEN) {
-                drive->irq = 1;
-            }
+            drive->irq = 1;
         }
     } else {
         printf("Unknow drive command %02x\n", drive->command);
@@ -235,6 +347,8 @@ void disk_drive_write_register(void *data, uint16_t address, uint8_t value) {
     switch (address)
     {
         case 0:
+            drive->status_2_3.DATA_REQUEST = 0;
+            drive->status_2_3.LOST_DATA = 0;
             drive->irq = 0;
             drive->command = value;
             _start_command(drive);
@@ -246,8 +360,9 @@ void disk_drive_write_register(void *data, uint16_t address, uint8_t value) {
             drive->sector = value;
             break;
         case 3:
-            // drive->DRQ = 0;
             drive->data = value;
+            drive->status_2_3.DATA_REQUEST = 0;
+            drive->status_2_3.LOST_DATA = 0;
             break;
     }
 }

@@ -174,7 +174,7 @@ int main(int argc, char* argv[]) {
     p.bus = machine.sam;
     sam_load_rom(machine.sam, 1, "roms/BASIC.ROM");
     sam_load_rom(machine.sam, 0, "roms/extbas11.rom");
-    sam_load_rom(machine.sam, 2, "roms/Disk21.bin");
+    sam_load_rom(machine.sam, 2, "roms/DSKBASIC.ROM");
     machine.sam->pia1 = pia_create();
     machine.sam->pia2 = pia_create();
 
@@ -239,7 +239,7 @@ int main(int argc, char* argv[]) {
                 disk_drive->next_command_after_nano = 0;
             }
 
-            if (disk_drive->irq) {
+            if (disk_drive->irq && disk_drive->DDEN) {
                 p._nmi = 1;
                 disk_drive->irq = 0;
             }

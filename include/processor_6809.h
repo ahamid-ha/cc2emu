@@ -2,6 +2,9 @@
 #include <sam.h>
 
 
+#ifndef __PROCESSOR_6809_H__
+#define __PROCESSOR_6809_H__
+
 #define cycle_nano 279 * 4
 
 #define fs_time_nano 16700000
@@ -52,3 +55,5 @@ struct processor_state {
 void processor_init(struct processor_state *p);
 void processor_reset(struct processor_state *p);
 void processor_next_opcode(struct processor_state *p);
+
+#endif

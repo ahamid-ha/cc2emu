@@ -1162,6 +1162,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         op_code_immediate8(0x35, 'PULS', 5, __opcode_puls)
         op_code_immediate8(0x36, 'PSHU', 5, __opcode_pshu)
         op_code_immediate8(0x37, 'PULU', 5, __opcode_pulu)
+        // op_code_immediate8(0x38, 'ANDCC', 4, __opcode_andcc)  // Undefined opcode
         op_code(0x39, 'RTS', 5, __opcode_rts)
         op_code(0x3A, 'ABX', 3, __opcode_abx)
         op_code(0x3B, 'RTI', 6, __opcode_rti)
