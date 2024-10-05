@@ -1,4 +1,6 @@
 #include <inttypes.h>
+#include <stdbool.h>
+
 
 struct disk_drive_status {
     union {
@@ -49,14 +51,15 @@ struct disk_drive_status {
     uint8_t _seek_track_target;
 
     uint8_t *_drive_data[4];
-    uint8_t *is_write_protect[4];
+    size_t _drive_data_length[4];
+    bool is_write_protect[4];
     int step_direction;
     int tracks;
     int sectors;
     int sector_length;
     int sector_data_pos;
 
-    int irq;
+    bool irq;
 };
 
 struct disk_drive_status *disk_drive_create(void);

@@ -24,6 +24,7 @@ struct {
     struct keyboard_status *keyboard;
     struct video_status *video;
     struct adc_status *adc;
+    struct disk_drive_status *disk_drive;
     int cart_sense;
 }machine;
 
@@ -116,7 +117,7 @@ void clipboard_copy() {
 bool str_ends_with(const char *str, const char *substr) {
     if (!str || !substr) return false;
     if (strlen(str) < strlen(substr)) return false;
-    return strncmp(str + strlen(str) - strlen(substr), substr, strlen(substr)) == 0;
+    return strncasecmp(str + strlen(str) - strlen(substr), substr, strlen(substr)) == 0;
 }
 
 static void SDLCALL rom_selection_cb(void* data, const char* const* filelist, int filter)
@@ -131,6 +132,8 @@ static void SDLCALL rom_selection_cb(void* data, const char* const* filelist, in
     const char *rom_path = *filelist;
     if (str_ends_with(rom_path, ".wav")) {
         adc_load_cassette(machine.adc, rom_path);
+    } else if (str_ends_with(rom_path, ".dsk")) {
+        disk_drive_load_disk(machine.disk_drive, 0, rom_path);
     } else {
         machine_reset();
         sam_load_rom(machine.sam, 2, rom_path);
@@ -182,8 +185,8 @@ int main(int argc, char* argv[]) {
     machine.video = video_initialize(machine.sam, machine.sam->pia2, machine.renderer);
     machine.adc = adc_initialize(machine.sam->pia1, machine.sam->pia2);
 
-    struct disk_drive_status *disk_drive = disk_drive_create();
-    machine.sam->pia_cartridge = disk_drive;
+    machine.disk_drive = disk_drive_create();
+    machine.sam->pia_cartridge = machine.disk_drive;
     machine.sam->pia_cartridge_read = disk_drive_read_register;
     machine.sam->pia_cartridge_write = disk_drive_write_register;
 
@@ -222,26 +225,21 @@ int main(int argc, char* argv[]) {
             }
 
             if (next_disk_drive_call && p._virtual_time_nano >= next_disk_drive_call) {
-                disk_drive_process_next(disk_drive);
+                disk_drive_process_next(machine.disk_drive);
                 next_disk_drive_call = 0;
             }
 
-            p._stopped = disk_drive->HALT && !disk_drive->status_2_3.DATA_REQUEST;
-            // if (disk_drive->HALT && !disk_drive->status_2_3.DATA_REQUEST) {
-            //     // simulate processor halt
-            //     disk_drive_process_next(disk_drive);
-            //     next_disk_drive_call = 0;
-            // }
+            p._stopped = machine.disk_drive->HALT && !machine.disk_drive->status_2_3.DATA_REQUEST;
 
-            if (disk_drive->next_command_after_nano) {
+            if (machine.disk_drive->next_command_after_nano) {
                 // schedule next call to the disk drive
-                next_disk_drive_call = p._virtual_time_nano + disk_drive->next_command_after_nano;
-                disk_drive->next_command_after_nano = 0;
+                next_disk_drive_call = p._virtual_time_nano + machine.disk_drive->next_command_after_nano;
+                machine.disk_drive->next_command_after_nano = 0;
             }
 
-            if (disk_drive->irq && disk_drive->DDEN) {
+            if (machine.disk_drive->irq && machine.disk_drive->DDEN) {
                 p._nmi = 1;
-                disk_drive->irq = 0;
+                machine.disk_drive->irq = 0;
             }
 
             p._irq = mc6821_interrupt_state(machine.sam->pia1);  // TODO: should be done in a better way
