@@ -48,6 +48,7 @@ struct processor_state {
     uint64_t _irq_active_time_nano;
     int _firq;
     int _nmi;
+    int _nmi_prev;
     int _sync;
     int _cwai;
 };

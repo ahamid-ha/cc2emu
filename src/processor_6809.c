@@ -28,6 +28,7 @@ void processor_reset(struct processor_state *p) {
     p->_irq_active_time_nano = 0;
     p->_firq = 0;
     p->_nmi = 0;
+    p->_nmi_prev = 0;
     p->_sync = 0;
     p->_cwai = 0;
 
@@ -1420,6 +1421,9 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
 }
 
 void processor_next_opcode(struct processor_state *p) {
+    int nmi = p->_nmi && !p->_nmi_prev;
+    p->_nmi_prev = p->_nmi;
+
     if (!p->_irq) {
         p->_irq_active_time_nano = 0;
      } else if (!p->_irq_active_time_nano) {
@@ -1434,7 +1438,7 @@ void processor_next_opcode(struct processor_state *p) {
 
 
     if (p->_sync) {
-        if (p->_nmi || p->_firq || (p->_irq && p->_virtual_time_nano >= p->_irq_active_time_nano)) {
+        if (nmi || p->_firq || (p->_irq && p->_virtual_time_nano >= p->_irq_active_time_nano)) {
             add_cycles(1);
             p->_sync = 0;
         } else {
@@ -1443,8 +1447,7 @@ void processor_next_opcode(struct processor_state *p) {
         }
     }
 
-    if (!p->_cwai && p->_nmi) {
-        p->_nmi = 0;  // the interrupt is edge based
+    if (!p->_cwai && nmi) {
         _processor_push_state(p);
 
         p->F = 1;
@@ -1472,7 +1475,7 @@ void processor_next_opcode(struct processor_state *p) {
     }
 
     if (p->_cwai) {
-        if (p->_nmi) {
+        if (nmi) {
             p->_cwai = 0;
             p->F = 1;
             p->I = 1;

@@ -209,6 +209,8 @@ int main(int argc, char* argv[]) {
         while (next_video_call_after_ns) {
             processor_next_opcode(&p);
 
+            p._nmi = machine.disk_drive->irq && machine.disk_drive->DDEN;
+
             adc_process(machine.adc, p._virtual_time_nano);
 
             while (next_video_call_after_ns && p._virtual_time_nano >= next_video_call) {
@@ -235,11 +237,6 @@ int main(int argc, char* argv[]) {
                 // schedule next call to the disk drive
                 next_disk_drive_call = p._virtual_time_nano + machine.disk_drive->next_command_after_nano;
                 machine.disk_drive->next_command_after_nano = 0;
-            }
-
-            if (machine.disk_drive->irq && machine.disk_drive->DDEN) {
-                p._nmi = 1;
-                machine.disk_drive->irq = 0;
             }
 
             p._irq = mc6821_interrupt_state(machine.sam->pia1);  // TODO: should be done in a better way

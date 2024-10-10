@@ -31,13 +31,14 @@ void disk_drive_process_next(struct disk_drive_status *drive) {
     drive->_next_command = NULL;
 
     next_command(drive);
+
+    if (drive->irq) drive->HALT = 0;
 }
 
 void _end_command(struct disk_drive_status *drive) {
     drive->status_1.BUSY = 0;
     drive->next_command_after_nano = 0;
     drive->_next_command = NULL;
-    drive->HALT = 0;
     drive->irq = 1;
     // printf("-- Command end\n");
 }
@@ -133,19 +134,21 @@ int _get_drive_id(struct disk_drive_status *drive) {
 }
 
 void _command_read_sector(struct disk_drive_status *drive) {
-    unsigned old_data_request = drive->status_2_3.DATA_REQUEST;
     uint8_t *_drive_data = _get_drive_data(drive);
 
-    if (drive->sector_data_pos > drive->sector_length) {
+    if (drive->sector_data_pos >= drive->sector_length) {
         if ((drive->command & 0x10) == 0) {
             // single sector
-            _end_command(drive);
+            _schedule_next(drive, BYTE_RW_DELAY_NS * 2, _end_command);
             return;
         }
         drive->sector_data_pos = 0;
         drive->sector++;
 
-        // printf("Drive command read sector track=%d, sector=%d\n", drive->track, drive->sector);
+        // printf("Drive command read next sector track=%d, sector=%d\n", drive->track, drive->sector);
+
+        _schedule_next(drive, BYTE_RW_DELAY_NS * 82, _command_read_sector);
+        return;
     }
 
     if (!_drive_data ||
@@ -157,13 +160,19 @@ void _command_read_sector(struct disk_drive_status *drive) {
         return;
     }
 
-    drive->data = _drive_data[(((int)drive->track) * drive->sectors + (int)drive->sector - 1) * drive->sector_length + drive->sector_data_pos];
-    drive->sector_data_pos++;
-    drive->status_2_3.DATA_REQUEST = 1;
-    if (old_data_request) {
+    drive->status_2_3.LOST_DATA = 0;
+    if (drive->status_2_3.DATA_REQUEST) {
         drive->status_2_3.LOST_DATA = 1;
         printf("Data lost\n");
     }
+
+    int data_pos = (((int)drive->track) * drive->sectors + (int)drive->sector - 1) * drive->sector_length + drive->sector_data_pos;
+    if (drive->sector_data_pos < drive->sector_length && data_pos < drive->_drive_data_length[_get_drive_id(drive)])
+        drive->data = _drive_data[data_pos];
+    // printf("     read sector track=%d, sector=%d pos=%d data_pos=%d data=%02X\n", drive->track, drive->sector, drive->sector_data_pos, data_pos, drive->data);
+    drive->status_2_3.DATA_REQUEST = 1;
+    drive->sector_data_pos++;
+
     _schedule_next(drive, BYTE_RW_DELAY_NS, _command_read_sector);
 }
 
@@ -431,6 +440,7 @@ void disk_drive_write_register(void *data, uint16_t address, uint8_t value) {
 
     if ((address & 0x8) == 0) {
         drive->drive_select_ff = value;
+        if (drive->irq) drive->HALT = 0;
         return;
     }
 
@@ -456,6 +466,7 @@ void disk_drive_write_register(void *data, uint16_t address, uint8_t value) {
             drive->status_2_3.LOST_DATA = 0;
             break;
     }
+    if (drive->irq) drive->HALT = 0;
 }
 
 
