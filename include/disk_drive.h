@@ -63,6 +63,7 @@ struct disk_drive_status {
 };
 
 struct disk_drive_status *disk_drive_create(void);
+void disk_drive_reset(struct disk_drive_status *drive);
 uint8_t disk_drive_read_register(void *drive, uint16_t address);
 void disk_drive_write_register(void *drive, uint16_t address, uint8_t value);
 void disk_drive_process_next(struct disk_drive_status *drive);

@@ -322,6 +322,23 @@ void _command_read_address(struct disk_drive_status *drive) {
     _schedule_next(drive, BYTE_RW_DELAY_NS, _command_read_address);
 }
 
+void disk_drive_reset(struct disk_drive_status *drive) {
+    drive->_next_command = NULL;
+    drive->next_command_after_nano = 0;
+    drive->irq = 0;
+    drive->HALT = 0;
+    drive->status_1.BUSY = 0;
+    drive->drive_select_ff = 0;
+    drive->command = 3;
+    drive->sector = 1;
+
+    drive->_seek_track_target = 0;
+
+    _clear_status_1(drive);
+    drive->_seek_track_target = 0;
+    _command_seek(drive);
+}
+
 void _start_command(struct disk_drive_status *drive) {
     if ((drive->command & 0xf0) == 0) {
         // restore

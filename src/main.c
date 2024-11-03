@@ -193,6 +193,7 @@ int main(int argc, char* argv[]) {
     machine.cart_sense = 0;
 
     processor_reset(&p);
+    disk_drive_reset(machine.disk_drive);
 
     int is_1st_key_event_processed = 0;  // only one key is processed per one iteration to give time to the machine to process it
     int joy_emulation = 0;
@@ -328,6 +329,7 @@ int main(int argc, char* argv[]) {
                 if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F10) {
                     machine_reset();
                     machine.cart_sense = 0;
+                    disk_drive_reset(machine.disk_drive);
                 }
                 if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F5) {
                     joy_emulation = !joy_emulation;
