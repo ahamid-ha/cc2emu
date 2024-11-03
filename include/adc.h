@@ -1,3 +1,6 @@
+#ifndef __ADC__
+#define __ADC__
+
 #include <inttypes.h>
 #include "mc6821.h"
 
@@ -34,3 +37,5 @@ struct adc_status *adc_initialize(struct mc6821_status *pia1, struct mc6821_stat
 void adc_reset(struct adc_status *adc);
 void adc_load_cassette(struct adc_status *adc, const char *path);
 void adc_process(struct adc_status *adc, uint64_t virtual_time_ns);
+
+#endif

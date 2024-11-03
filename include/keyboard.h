@@ -1,3 +1,6 @@
+#ifndef __KEYBOARD_H__
+#define __KEYBOARD_H__
+
 #include <inttypes.h>
 #include "mc6821.h"
 
@@ -13,3 +16,5 @@ struct keyboard_status {
 int keyboard_set_key(struct keyboard_status *ks, SDL_KeyboardEvent *event, int is_pressed);
 struct keyboard_status *keyboard_initialize(struct mc6821_status *pia);
 void keyboard_reset(struct keyboard_status *ks);
+
+#endif

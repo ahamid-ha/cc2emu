@@ -149,6 +149,7 @@ int keyboard_set_key(struct keyboard_status *ks, SDL_KeyboardEvent *event, int i
         kb_map(SDLK_ESCAPE, 6, 2)
         // kb_map(SDLK_F10, 6, 2)    // break
         kb_map_shifted(SDLK_F2, 4, 0)    // Upper case
+        kb_map(SDLK_CLEAR, 6, 1)    // clr
         kb_map(SDLK_F1, 6, 1)    // clr
         kb_map_symbol(SDLK_EQUALS, '=', '+')
         kb_map_symbol(SDLK_SLASH, '/', '?')

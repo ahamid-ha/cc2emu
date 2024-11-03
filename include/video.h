@@ -1,7 +1,11 @@
+#ifndef __VIDEO__
+#define __VIDEO__
+
 #include <SDL3/SDL.h>
 #include <inttypes.h>
 #include "mc6821.h"
 #include "sam.h"
+
 
 struct video_status {
     struct sam_status *sam;
@@ -33,3 +37,5 @@ void video_reset(struct video_status *v);
 uint64_t video_start_field(struct video_status *v);
 void video_end_field(struct video_status *v);
 uint64_t video_process_next(struct video_status *v);
+
+#endif
