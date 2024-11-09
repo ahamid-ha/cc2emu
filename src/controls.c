@@ -15,13 +15,18 @@ void controls_display(struct machine_status *machine) {
     if (nk_begin(controls.ctx, "tool bar", nk_rect(0, window_h - 40, window_w, 40), NK_WINDOW_NO_SCROLLBAR))
     {
         nk_layout_row_static(controls.ctx, 30, 80, 3);
-        if (nk_button_label(controls.ctx, "Clear"))
+        if (nk_button_label(controls.ctx, "Clear")) {
+            keyboard_buffer_reset();
             machine_send_key(SDLK_CLEAR);
+        }
 
-        if (nk_button_label(controls.ctx, "Break"))
+        if (nk_button_label(controls.ctx, "Break")) {
+            keyboard_buffer_reset();
             machine_send_key(SDLK_ESCAPE);
+        }
 
         if (nk_button_label(controls.ctx, "Reset")) {
+            keyboard_buffer_reset();
             machine_reset(machine);
             machine->cart_sense = 0;
             disk_drive_reset(machine->disk_drive);

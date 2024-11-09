@@ -5,6 +5,13 @@
 #include "utils.h"
 
 
+// Just by testing, I found that 70ms provide a stable keyboard with no misses with extended color basic
+#define KEYBOARD_POLL_PERIOD_NS 70000000
+
+int keyboard_buffer_empty();
+SDL_Event keyboard_buffer_pull();
+
+
 void machine_init(struct machine_status *machine) {
     processor_init(&machine->p);
 
@@ -29,9 +36,10 @@ void machine_init(struct machine_status *machine) {
     machine->_next_disk_drive_call = 0;
     machine->p._virtual_time_nano = nanos();  // sync time
 
-    machine->_is_1st_key_event_processed = 0;  // only one key is processed per one iteration to give time to the machine to process it
     machine->_joy_emulation = 0;
     machine->_joy_emulation_side = 1;  // 0: left, 1: right
+
+    machine->_next_keyboard_poll_ns = 0;
 }
 
 void machine_reset(struct machine_status *machine) {
@@ -54,6 +62,14 @@ void machine_process_frame(struct machine_status *machine) {
     uint64_t next_video_call = next_video_call_after_ns + machine->p._virtual_time_nano;
     while (next_video_call_after_ns) {
         processor_next_opcode(&machine->p);
+
+        if (machine->p._virtual_time_nano >= machine->_next_keyboard_poll_ns && !keyboard_buffer_empty() ) {
+            SDL_Event event = keyboard_buffer_pull();
+            if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
+                keyboard_set_key(machine->keyboard, &event.key, event.type == SDL_EVENT_KEY_DOWN ? 1 : 0);
+                machine->_next_keyboard_poll_ns = machine->p._virtual_time_nano + KEYBOARD_POLL_PERIOD_NS;
+            }
+        }
 
         machine->p._nmi = machine->disk_drive->irq && machine->disk_drive->DDEN;
 
@@ -93,9 +109,13 @@ void machine_process_frame(struct machine_status *machine) {
 
 #define KEY_BOARD_BUFFER_LENGTH 2000
 SDL_Event keyboard_buffer[KEY_BOARD_BUFFER_LENGTH];  // ring buffer
-int keyboard_buffer_length;
 int keyboard_buffer_start = 0;
 int keyboard_buffer_end = 0;
+
+int keyboard_buffer_reset() {
+    keyboard_buffer_start = 0;
+    keyboard_buffer_end = 0;
+}
 
 int keyboard_buffer_empty() {
     return keyboard_buffer_start == keyboard_buffer_end;
@@ -155,17 +175,7 @@ void clipboard_copy() {
 }
 
 void machine_handle_input_begin(struct machine_status *machine) {
-    SDL_Event event;
-
-    if (machine->_is_1st_key_event_processed > 4) machine->_is_1st_key_event_processed = 0;  // wait for max 4 V. scan to send next key
-    if (machine->_is_1st_key_event_processed) machine->_is_1st_key_event_processed++;
-
-    while (!keyboard_buffer_empty() && (!machine->_is_1st_key_event_processed || machine->keyboard->columns_used > 24)) {
-        event = keyboard_buffer_pull();
-        if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
-            machine->_is_1st_key_event_processed += keyboard_set_key(machine->keyboard, &event.key, event.type == SDL_EVENT_KEY_DOWN ? 1 : 0);
-        }
-    }
+    // nothing for now
 }
 
 void machine_handle_input(struct machine_status *machine, SDL_Event *event) {
@@ -217,10 +227,7 @@ void machine_handle_input(struct machine_status *machine, SDL_Event *event) {
             // printf("event->key.key=%d \n", event->key.key);
     } else {
         if ((event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) && !(event->key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT))) {
-            if ((!machine->_is_1st_key_event_processed || machine->keyboard->columns_used > 24))
-                machine->_is_1st_key_event_processed += keyboard_set_key(machine->keyboard, &event->key, event->type == SDL_EVENT_KEY_DOWN ? 1 : 0);
-            else
-                keyboard_buffer_push(event);
+            keyboard_buffer_push(event);
         }
     }
 

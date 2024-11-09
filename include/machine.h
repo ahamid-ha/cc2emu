@@ -22,7 +22,7 @@ struct machine_status {
     int cart_sense;
 
     uint64_t _next_disk_drive_call;  // tracks the disk timing
-    int _is_1st_key_event_processed;  // workaround to slow down key presses till they are handled by the processor
+    uint64_t _next_keyboard_poll_ns;
     int _joy_emulation;
     int _joy_emulation_side;  // 0: left, 1: right
 
@@ -35,5 +35,6 @@ void machine_process_frame(struct machine_status *machine);
 void machine_handle_input_begin(struct machine_status *machine);
 void machine_handle_input(struct machine_status *machine, SDL_Event *event);
 void machine_send_key(uint32_t key_code);
+int keyboard_buffer_reset();
 
 #endif
