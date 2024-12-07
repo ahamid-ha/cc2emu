@@ -29,9 +29,11 @@ struct video_status {
     int _x;
     uint32_t* _pixels;
     int _pitch;
+    SDL_FRect _output_port;
 };
 
 struct video_status *video_initialize(struct sam_status *sam, struct mc6821_status *pia, SDL_Renderer* renderer);
+void video_reinitialize(struct video_status *v, SDL_Renderer* renderer);
 void video_reset(struct video_status *v);
 
 uint64_t video_start_field(struct video_status *v);

@@ -90,31 +90,8 @@ uint64_t video_start_field(struct video_status *v) {
 #define toolbar_height 40
 
 void video_end_field(struct video_status *v) {
-    int window_w, window_h;
-    SDL_Window *window = SDL_GetRenderWindow(v->renderer);
-    SDL_GetWindowSizeInPixels(window, &window_w, &window_h);
-
-    SDL_FRect dest;
-    if ((window_w - screen_margins * 2) / aspect_ratio <= window_h - screen_margins * 2 - toolbar_height) {
-        float height = (window_w - screen_margins * 2) / aspect_ratio;
-        dest = (SDL_FRect){
-            .h = height,
-            .w = window_w - screen_margins * 2,
-            .x = screen_margins,
-            .y = (window_h - toolbar_height - height) / 2,
-        };
-    } else {
-        float width = (window_h - screen_margins * 2 - toolbar_height) * aspect_ratio;
-        dest = (SDL_FRect){
-            .h = window_h - screen_margins * 2 - toolbar_height,
-            .w = width,
-            .x = (window_w - width) / 2,
-            .y = screen_margins,
-        };
-    }
-
     SDL_UnlockTexture(v->texture);
-    SDL_RenderTexture(v->renderer, v->texture, NULL, &dest);
+    SDL_RenderTexture(v->renderer, v->texture, NULL, &v->_output_port);
 }
 
 #define fs_start 13 + 25 + 192
@@ -306,6 +283,30 @@ void video_reset(struct video_status *v) {
     v->vdg_op_mode = 0;
 }
 
+void _calculate_output_port(struct video_status *v) {
+    int window_w, window_h;
+    SDL_Window *window = SDL_GetRenderWindow(v->renderer);
+    SDL_GetWindowSizeInPixels(window, &window_w, &window_h);
+
+    if ((window_w - screen_margins * 2) / aspect_ratio <= window_h - screen_margins * 2 - toolbar_height) {
+        float height = (window_w - screen_margins * 2) / aspect_ratio;
+        v->_output_port = (SDL_FRect){
+            .h = height,
+            .w = window_w - screen_margins * 2,
+            .x = screen_margins,
+            .y = (window_h - toolbar_height - height) / 2,
+        };
+    } else {
+        float width = (window_h - screen_margins * 2 - toolbar_height) * aspect_ratio;
+        v->_output_port = (SDL_FRect){
+            .h = window_h - screen_margins * 2 - toolbar_height,
+            .w = width,
+            .x = (window_w - width) / 2,
+            .y = screen_margins,
+        };
+    }
+}
+
 struct video_status *video_initialize(struct sam_status *sam, struct mc6821_status *pia, SDL_Renderer* renderer) {
     struct video_status *v=malloc(sizeof(struct video_status));
     memset(v, 0, sizeof(struct video_status));
@@ -317,8 +318,17 @@ struct video_status *video_initialize(struct sam_status *sam, struct mc6821_stat
 
     v->renderer = renderer;
     v->texture = SDL_CreateTexture( renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, 256, 192 );
+    _calculate_output_port(v);
 
     mc6821_register_cb(pia, 1, (mc6821_cb)_video_mode_change_cb, v);
 
     return v;
+}
+
+void video_reinitialize(struct video_status *v, SDL_Renderer* renderer) {
+    SDL_DestroyTexture(v->texture);
+
+    v->renderer = renderer;
+    v->texture = SDL_CreateTexture( renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, 256, 192 );
+    _calculate_output_port(v);
 }

@@ -44,6 +44,10 @@ void controls_init(struct machine_status *machine) {
     // TODO: icons using https://wiki.libsdl.org/SDL3/SDL_LoadBMP or https://github.com/libsdl-org/SDL_image
 }
 
+void controls_reinit(void) {
+    nk_sdl_update_renderer(controls.machine->window, controls.machine->renderer);
+}
+
 void _settings_close_window()
 {
     controls.settings_window_state = false;
