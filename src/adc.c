@@ -151,7 +151,7 @@ int adc_load_cassette(struct adc_status *adc, const char *path) {
         return 0;
     }
 
-    if (!SDL_LoadWAV(path, &spec, &adc->cassette_audio_buf, &adc->cassette_audio_len)) {
+    if (!SDL_LoadWAV(path, &spec, &adc->cassette_audio_buf, (Uint32*)&adc->cassette_audio_len)) {
         printf("Error cassette loading: %s: %s\n", path, SDL_GetError());
         return 1;
     }

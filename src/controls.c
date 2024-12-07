@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <stdint.h>
 #include <sys/stat.h>
 #include "controls.h"
 #include "nk_sdl.h"
@@ -70,7 +71,7 @@ void _settings_toggle_window(bool open_all)
 
 static void SDLCALL _disk_selection_cb(void* data, const char* const* filelist, int filter)
 {
-    int disk_no = (int)data;
+    int disk_no = (intptr_t)data;
     if (!filelist) {
         fprintf(stderr, "An error occured: %s", SDL_GetError());
         return;
@@ -122,7 +123,7 @@ static void SDLCALL _cartridge_selection_cb(void* data, const char* const* filel
 
 static void SDLCALL _disk_new_cb(void* data, const char* const* filelist, int filter)
 {
-    int disk_no = (int)data;
+    int disk_no = (intptr_t)data;
     if (!filelist) {
         fprintf(stderr, "An error occured: %s", SDL_GetError());
         return;
@@ -181,11 +182,11 @@ void _settings_window_display() {
                 nk_label(controls.ctx, controls.disks[disk_no].path ? controls.disks[disk_no].path : "<Empty>", NK_TEXT_LEFT);
 
                 if (nk_button_label(controls.ctx, "New")) {
-                    SDL_ShowSaveFileDialog(_disk_new_cb, (void*)disk_no, controls.machine->window, NULL, 0, "roms/cartridges");
+                    SDL_ShowSaveFileDialog(_disk_new_cb, (void*)((intptr_t)disk_no), controls.machine->window, NULL, 0, "roms/cartridges");
                 }
 
                 if (nk_button_label(controls.ctx, "Load")) {
-                    SDL_ShowOpenFileDialog(_disk_selection_cb, (void*)disk_no, controls.machine->window, NULL, 0, "roms/cartridges", false);
+                    SDL_ShowOpenFileDialog(_disk_selection_cb, (void*)((intptr_t)disk_no), controls.machine->window, NULL, 0, "roms/cartridges", false);
                 }
 
                 if (nk_button_label(controls.ctx, "Unload")) {
