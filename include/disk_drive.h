@@ -71,5 +71,6 @@ uint8_t disk_drive_read_register(void *drive, uint16_t address);
 void disk_drive_write_register(void *drive, uint16_t address, uint8_t value);
 void disk_drive_process_next(struct disk_drive_status *drive);
 int disk_drive_load_disk(struct disk_drive_status *drive, int drive_no, const char *path);
+uint8_t *_get_drive_data(struct disk_drive_status *drive);
 
 #endif

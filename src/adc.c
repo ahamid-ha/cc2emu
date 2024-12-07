@@ -139,7 +139,7 @@ struct adc_status *adc_initialize(struct mc6821_status *pia1, struct mc6821_stat
     return adc;
 }
 
-void adc_load_cassette(struct adc_status *adc, const char *path) {
+int adc_load_cassette(struct adc_status *adc, const char *path) {
     SDL_AudioSpec spec;
 
     if (adc->cassette_audio_buf) {
@@ -147,9 +147,13 @@ void adc_load_cassette(struct adc_status *adc, const char *path) {
         adc->cassette_audio_buf = NULL;
     }
 
+    if (!path) {
+        return 0;
+    }
+
     if (!SDL_LoadWAV(path, &spec, &adc->cassette_audio_buf, &adc->cassette_audio_len)) {
         printf("Error cassette loading: %s: %s\n", path, SDL_GetError());
-        return;
+        return 1;
     }
     adc->next_cassette_sample_time_ns = 0;
     adc->cassette_audio_location = 0;
@@ -169,48 +173,54 @@ void adc_load_cassette(struct adc_status *adc, const char *path) {
             printf("Format converting failed: %s\n", SDL_GetError());
             SDL_free(adc->cassette_audio_buf);
             adc->cassette_audio_buf = NULL;
-            return;
+            return 1;
         }
         SDL_free(adc->cassette_audio_buf);
         adc->cassette_audio_buf = dest_audio_buf;
         adc->cassette_audio_len = dest_audio_len;
     }
     printf("Loaded wav file %s %d\n", path, adc->cassette_audio_len);
+    return 0;
 }
 
 #define CASSETTE_SAMPLE_NS 104170
 #define SOUND_SAMPLE_NS 22675
 void adc_process(struct adc_status *adc, uint64_t virtual_time_ns) {
-    if (adc->cassette_audio_buf && adc->cassette_motor) {
-        if (!adc->next_cassette_sample_time_ns) {
-            adc->next_cassette_sample_time_ns = virtual_time_ns + CASSETTE_SAMPLE_NS;
-            adc->cassette_audio_location = 0;
-        } else {
-            if (virtual_time_ns >= adc->next_cassette_sample_time_ns &&  adc->cassette_audio_location < adc->cassette_audio_len) {
-                if (adc->cassette_audio_buf[adc->cassette_audio_location] > 127)
-                    mc6821_peripheral_input(adc->pia2, 0, 0, 1);
-                else
-                    mc6821_peripheral_input(adc->pia2, 0, 1, 1);
-                adc->cassette_audio_location++;
-                adc->next_cassette_sample_time_ns += CASSETTE_SAMPLE_NS;
-            }
-        }
+    if (!adc->next_cassette_sample_time_ns) {
+        adc->next_cassette_sample_time_ns = virtual_time_ns + CASSETTE_SAMPLE_NS;
     }
 
-    if (adc->sound_enabled && virtual_time_ns > adc->next_sound_sample_time_ns) {
-        uint8_t snd;
-        switch (adc->switch_selection) {
-            // just passthrough cassette noise
-            case 0: snd = (int)(adc->adc_level * 255 / 5); break;
-            case 1: if (adc->cassette_audio_location < adc->cassette_audio_len) snd = adc->cassette_audio_buf[adc->cassette_audio_location]; break;
-            default: snd = 0;
+    if (virtual_time_ns >= adc->next_cassette_sample_time_ns) {
+        if (adc->cassette_audio_location < adc->cassette_audio_len &&
+                adc->cassette_audio_buf && adc->cassette_motor) {
+            if (adc->cassette_audio_buf[adc->cassette_audio_location] > 127)
+                mc6821_peripheral_input(adc->pia2, 0, 0, 1);
+            else
+                mc6821_peripheral_input(adc->pia2, 0, 1, 1);
+            adc->cassette_audio_location++;
         }
-        if (adc->sound_samples_size < SOUND_BUFFER_SIZE) {
-            adc->sound_samples[adc->sound_samples_size++] = snd;
-            if (!adc->next_sound_sample_time_ns) adc->next_sound_sample_time_ns = virtual_time_ns;
-            adc->next_sound_sample_time_ns += SOUND_SAMPLE_NS;
-        } else {
-            printf("Sound buffer overflow\n");
+        adc->next_cassette_sample_time_ns += CASSETTE_SAMPLE_NS;
+    }
+
+    if (!adc->next_sound_sample_time_ns) {
+        adc->next_sound_sample_time_ns = virtual_time_ns + SOUND_SAMPLE_NS;
+    }
+
+    if (virtual_time_ns > adc->next_sound_sample_time_ns) {
+        if (adc->sound_enabled) {
+            uint8_t snd;
+            switch (adc->switch_selection) {
+                // just passthrough cassette noise
+                case 0: snd = (int)(adc->adc_level * 255 / 5); break;
+                case 1: if (adc->cassette_audio_location < adc->cassette_audio_len) snd = adc->cassette_audio_buf[adc->cassette_audio_location]; break;
+                default: snd = 0;
+            }
+            if (adc->sound_samples_size < SOUND_BUFFER_SIZE) {
+                adc->sound_samples[adc->sound_samples_size++] = snd;
+            } else {
+                printf("Sound buffer overflow\n");
+            }
         }
+        adc->next_sound_sample_time_ns += SOUND_SAMPLE_NS;
     }
 }

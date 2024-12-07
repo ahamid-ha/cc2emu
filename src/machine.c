@@ -112,7 +112,7 @@ SDL_Event keyboard_buffer[KEY_BOARD_BUFFER_LENGTH];  // ring buffer
 int keyboard_buffer_start = 0;
 int keyboard_buffer_end = 0;
 
-int keyboard_buffer_reset() {
+void keyboard_buffer_reset() {
     keyboard_buffer_start = 0;
     keyboard_buffer_end = 0;
 }

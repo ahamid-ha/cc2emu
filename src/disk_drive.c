@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include "disk_drive.h"
+#include "controls.h"
 
 #define BYTE_RW_DELAY_NS 32000
 
@@ -487,6 +488,20 @@ void disk_drive_write_register(void *data, uint16_t address, uint8_t value) {
 }
 
 
+int disk_drive_create_empty_image(const char *path) {
+    const size_t SIZE = 161280;
+    FILE *file = fopen(path, "wb");
+    if (file == NULL) {
+        error_general_file(path);
+        return 1;
+    }
+
+    fseek(file, SIZE, SEEK_SET);
+    fclose(file);
+    return 0;
+}
+
+
 int disk_drive_load_disk(struct disk_drive_status *drive, int drive_no, const char *path) {
     if (drive->_drive_data[drive_no]) {
         munmap(drive->_drive_data[drive_no], drive->_drive_data_length[drive_no]);
@@ -503,27 +518,30 @@ int disk_drive_load_disk(struct disk_drive_status *drive, int drive_no, const ch
 
     int fd = open (path, O_RDWR);
     if (fd < 0) {
-        fprintf(stderr, "Error opening file: %s : %s\n", path, strerror(errno));
-        exit(EXIT_FAILURE);
+        error_general_file(path);
+        return 1;
     }
 
     struct stat st;
     if (fstat(fd,&st) < 0)
     {
-        perror("Error in fstat");
-        exit(EXIT_FAILURE);
+        error_general_file(path);
+        close(fd);
+        return 1;
     }
 
     size_t disk_file_length = st.st_size;
-    drive->_drive_data_length[drive_no] = disk_file_length;
 
     if ((drive->_drive_data[drive_no] = mmap(NULL, disk_file_length, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0)) == MAP_FAILED)
     {
-        perror("Error in mmap");
-        exit(EXIT_FAILURE);
+        error_general_file(path);
+        close(fd);
+        drive->_drive_data[drive_no] = 0;
+        return 1;
     }
     close(fd);
 
+    drive->_drive_data_length[drive_no] = disk_file_length;
     drive->tracks = 35;
     drive->sectors = 18;
     drive->sector_length = 256;

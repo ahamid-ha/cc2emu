@@ -84,9 +84,12 @@ int main(int argc, char* argv[]) {
     disk_drive_reset(machine->disk_drive);
 
     while (running) {
+        SDL_SetRenderDrawColor(machine->renderer, 0, 0, 0, 255);
+        SDL_RenderClear(machine->renderer);
+
         machine_process_frame(machine);
 
-        controls_display(machine);
+        controls_display();
 
         // Update the renderer
         SDL_RenderPresent(machine->renderer);

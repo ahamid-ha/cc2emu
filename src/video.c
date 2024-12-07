@@ -85,13 +85,33 @@ uint64_t video_start_field(struct video_status *v) {
     return H_HS_START_NS;
 }
 
+#define aspect_ratio (256.0 / 192)
+#define screen_margins 20
+#define toolbar_height 40
+
 void video_end_field(struct video_status *v) {
-    SDL_FRect dest = {
-        .h = 192 * 4,
-        .w = 256 * 4,
-        .x = 20,
-        .y = 20,
-    };
+    int window_w, window_h;
+    SDL_Window *window = SDL_GetRenderWindow(v->renderer);
+    SDL_GetWindowSizeInPixels(window, &window_w, &window_h);
+
+    SDL_FRect dest;
+    if ((window_w - screen_margins * 2) / aspect_ratio <= window_h - screen_margins * 2 - toolbar_height) {
+        float height = (window_w - screen_margins * 2) / aspect_ratio;
+        dest = (SDL_FRect){
+            .h = height,
+            .w = window_w - screen_margins * 2,
+            .x = screen_margins,
+            .y = (window_h - toolbar_height - height) / 2,
+        };
+    } else {
+        float width = (window_h - screen_margins * 2 - toolbar_height) * aspect_ratio;
+        dest = (SDL_FRect){
+            .h = window_h - screen_margins * 2 - toolbar_height,
+            .w = width,
+            .x = (window_w - width) / 2,
+            .y = screen_margins,
+        };
+    }
 
     SDL_UnlockTexture(v->texture);
     SDL_RenderTexture(v->renderer, v->texture, NULL, &dest);
