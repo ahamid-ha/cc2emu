@@ -4,20 +4,14 @@
 #include <stdint.h>
 #include <sys/stat.h>
 #include "controls.h"
+#include "settings.h"
 #include "nk_sdl.h"
 
 struct {
     struct nk_context *ctx;
     struct machine_status *machine;
 
-    struct {
-        char *path;
-    } disks[4];
-
-    char *cartridge_path;
-    char *cassette_path;
-
-    float joystick_selection;
+    float joystick_selection;  // to be able to track which joystick is accessed
 
     bool settings_window_state;
 
@@ -85,8 +79,9 @@ static void SDLCALL _disk_selection_cb(void* data, const char* const* filelist, 
 
     const char *rom_path = *filelist;
     if(!disk_drive_load_disk(controls.machine->disk_drive, disk_no, rom_path)) {
-        if (controls.disks[disk_no].path) free(controls.disks[disk_no].path);
-        controls.disks[disk_no].path = strdup(rom_path);
+        if (app_settings.disks[disk_no].path) free(app_settings.disks[disk_no].path);
+        app_settings.disks[disk_no].path = strdup(rom_path);
+        settings_save();
     }
 }
 
@@ -101,8 +96,9 @@ static void SDLCALL _cassette_selection_cb(void* data, const char* const* fileli
 
     const char *rom_path = *filelist;
     if(!adc_load_cassette(controls.machine->adc, rom_path)) {
-        if (controls.cassette_path) free(controls.cassette_path);
-        controls.cassette_path = strdup(rom_path);
+        if (app_settings.cassette_path) free(app_settings.cassette_path);
+        app_settings.cassette_path = strdup(rom_path);
+        settings_save();
     }
 }
 
@@ -120,8 +116,9 @@ static void SDLCALL _cartridge_selection_cb(void* data, const char* const* filel
 
     if(!sam_load_rom(controls.machine->sam, 2, rom_path)) {
         controls.machine->cart_sense = 1;
-        if (controls.cartridge_path) free(controls.cartridge_path);
-        controls.cartridge_path = strdup(rom_path);
+        if (app_settings.cartridge_path) free(app_settings.cartridge_path);
+        app_settings.cartridge_path = strdup(rom_path);
+        settings_save();
     }
 }
 
@@ -138,8 +135,9 @@ static void SDLCALL _disk_new_cb(void* data, const char* const* filelist, int fi
     const char *rom_path = *filelist;
 
     if(disk_drive_load_disk(controls.machine->disk_drive, disk_no, rom_path)) {
-        if (controls.disks[disk_no].path) free(controls.disks[disk_no].path);
-        controls.disks[disk_no].path = strdup(rom_path);
+        if (app_settings.disks[disk_no].path) free(app_settings.disks[disk_no].path);
+        app_settings.disks[disk_no].path = strdup(rom_path);
+        settings_save();
     }
 }
 
@@ -155,17 +153,18 @@ void _settings_window_display() {
             nk_layout_row_template_push_static(controls.ctx, 50);
             nk_layout_row_template_push_static(controls.ctx, 50);
             nk_layout_row_template_end(controls.ctx);
-            nk_label(controls.ctx, controls.cartridge_path ? controls.cartridge_path : "<Empty>", NK_TEXT_LEFT);
+            nk_label(controls.ctx, app_settings.cartridge_path ? app_settings.cartridge_path : "<Empty>", NK_TEXT_LEFT);
             if (nk_button_label(controls.ctx, "Load")) {
                 SDL_ShowOpenFileDialog(_cartridge_selection_cb, (void*)NULL, controls.machine->window, NULL, 0, "roms/cartridges", false);
             }
             if (nk_button_label(controls.ctx, "Unload")) {
-                if (controls.cartridge_path) free(controls.cartridge_path);
-                controls.cartridge_path = NULL;
+                if (app_settings.cartridge_path) free(app_settings.cartridge_path);
+                app_settings.cartridge_path = NULL;
                 keyboard_buffer_reset();
                 machine_reset(controls.machine);
                 controls.machine->cart_sense = 0;
                 disk_drive_reset(controls.machine->disk_drive);
+                settings_save();
             }
             nk_tree_state_pop(controls.ctx);
         }
@@ -183,7 +182,7 @@ void _settings_window_display() {
                 char disk_label[3] = {'1' + disk_no, '.', 0};
 
                 nk_label(controls.ctx, disk_label, NK_TEXT_LEFT);
-                nk_label(controls.ctx, controls.disks[disk_no].path ? controls.disks[disk_no].path : "<Empty>", NK_TEXT_LEFT);
+                nk_label(controls.ctx, app_settings.disks[disk_no].path ? app_settings.disks[disk_no].path : "<Empty>", NK_TEXT_LEFT);
 
                 if (nk_button_label(controls.ctx, "New")) {
                     SDL_ShowSaveFileDialog(_disk_new_cb, (void*)((intptr_t)disk_no), controls.machine->window, NULL, 0, "roms/cartridges");
@@ -194,9 +193,10 @@ void _settings_window_display() {
                 }
 
                 if (nk_button_label(controls.ctx, "Unload")) {
-                    if (controls.disks[disk_no].path) free(controls.disks[disk_no].path);
-                    controls.disks[disk_no].path = NULL;
+                    if (app_settings.disks[disk_no].path) free(app_settings.disks[disk_no].path);
+                    app_settings.disks[disk_no].path = NULL;
                     disk_drive_load_disk(controls.machine->disk_drive, disk_no, NULL);
+                    settings_save();
                 }
 
             }
@@ -209,14 +209,15 @@ void _settings_window_display() {
             nk_layout_row_template_push_static(controls.ctx, 80);
             nk_layout_row_template_push_static(controls.ctx, 50);
             nk_layout_row_template_end(controls.ctx);
-            nk_label(controls.ctx, controls.cassette_path ? controls.cassette_path : "<Empty>", NK_TEXT_LEFT);
+            nk_label(controls.ctx, app_settings.cassette_path ? app_settings.cassette_path : "<Empty>", NK_TEXT_LEFT);
             if (nk_button_label(controls.ctx, "Load")) {
                 SDL_ShowOpenFileDialog(_cassette_selection_cb, (void*)NULL, controls.machine->window, NULL, 0, "roms/cartridges", false);
             }
             if (nk_button_label(controls.ctx, "Unload")) {
-                if (controls.cassette_path) free(controls.cassette_path);
-                controls.cassette_path = NULL;
+                if (app_settings.cassette_path) free(app_settings.cassette_path);
+                app_settings.cassette_path = NULL;
                 adc_load_cassette(controls.machine->adc, NULL);
+                settings_save();
             }
             nk_slider_int(controls.ctx, 0, &controls.machine->adc->cassette_audio_location, controls.machine->adc->cassette_audio_len, 1);
             if (controls.machine->adc->cassette_motor) {
@@ -253,8 +254,6 @@ void controls_display() {
         }
 
         if (nk_button_label(controls.ctx, "Reset")) {
-            if (controls.cartridge_path) free(controls.cartridge_path);
-            controls.cartridge_path = NULL;
             keyboard_buffer_reset();
             machine_reset(controls.machine);
             controls.machine->cart_sense = 0;
@@ -274,7 +273,7 @@ void controls_display() {
 
         button_border_color = nk_rgba(0,0,0,255);
         if (controls.machine->adc->cassette_motor) button_border_color = nk_rgba(255,0,0,255);
-        else if (controls.cassette_path) button_border_color = nk_rgba(255,255,255,255);
+        else if (app_settings.cassette_path) button_border_color = nk_rgba(255,255,255,255);
         nk_style_push_color(controls.ctx, &controls.ctx->style.button.border_color, button_border_color);
         if (nk_button_label(controls.ctx, "Cassette")) {
             _settings_toggle_window(false);

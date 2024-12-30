@@ -10,6 +10,7 @@
 #include "controls.h"
 #include "utils.h"
 #include "nk_sdl.h"
+#include "settings.h"
 
 
 void segv_handler(int sig) {
@@ -25,28 +26,6 @@ void segv_handler(int sig) {
   exit(1);
 }
 
-static void SDLCALL rom_selection_cb(void* data, const char* const* filelist, int filter)
-{
-    struct machine_status *machine = (struct machine_status *)data;
-    if (!filelist) {
-        fprintf(stderr, "An error occured: %s", SDL_GetError());
-        return;
-    } else if (!*filelist) {
-        return;
-    }
-
-    const char *rom_path = *filelist;
-    if (str_ends_with(rom_path, ".wav")) {
-        adc_load_cassette(machine->adc, rom_path);
-    } else if (str_ends_with(rom_path, ".dsk")) {
-        disk_drive_load_disk(machine->disk_drive, 0, rom_path);
-    } else {
-        machine_reset(machine);
-        sam_load_rom(machine->sam, 2, rom_path);
-        machine->cart_sense = 1;
-    }
-}
-
 int main(int argc, char* argv[]) {
     signal(SIGSEGV, segv_handler);
 
@@ -55,6 +34,8 @@ int main(int argc, char* argv[]) {
         printf("Error initializing SDL: %s\n", SDL_GetError());
         return -1;
     }
+
+    settings_init();
 
     struct machine_status *machine = malloc(sizeof(struct machine_status));
 
@@ -97,10 +78,10 @@ int main(int argc, char* argv[]) {
         uint64_t time_ns = nanos();
         machine_handle_input_begin(machine);
 
+        controls_input_begin();
         while (machine->p._virtual_time_nano > time_ns) {
             // Handle events
             SDL_Event event;
-            controls_input_begin();
             while (SDL_WaitEventTimeout(&event, 10)) {
                 if (event.type == SDL_EVENT_QUIT) {
                     running = false;
@@ -121,9 +102,6 @@ int main(int argc, char* argv[]) {
 
                 machine_handle_input(machine, &event);
 
-                if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F9) {
-                    SDL_ShowOpenFileDialog(rom_selection_cb, machine, machine->window, NULL, 0, "roms/cartridges", false);
-                }
                 if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F10) {
                     machine_reset(machine);
                     machine->cart_sense = 0;
@@ -136,11 +114,11 @@ int main(int argc, char* argv[]) {
 
                 nk_sdl_handle_event(&event);
             }
-            controls_input_end();
 
             time_ns = nanos();
         }
     }
+    controls_input_end();
 
     // Clean up resources before exiting
     SDL_DestroyRenderer(machine->renderer);

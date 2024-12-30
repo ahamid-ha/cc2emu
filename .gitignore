@@ -2,3 +2,5 @@ roms/
 build/
 .vscode
 docs/
+external_tools/
+

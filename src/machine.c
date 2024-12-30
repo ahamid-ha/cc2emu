@@ -3,6 +3,7 @@
 #include <time.h>
 #include "machine.h"
 #include "utils.h"
+#include "settings.h"
 
 
 // Just by testing, I found that 70ms provide a stable keyboard with no misses with extended color basic
@@ -40,6 +41,17 @@ void machine_init(struct machine_status *machine) {
     machine->_joy_emulation_side = 1;  // 0: left, 1: right
 
     machine->_next_keyboard_poll_ns = 0;
+
+    for (int i = 0; i < 4; i++) {
+        if (!app_settings.disks[i].path || !app_settings.disks[i].path[0]) continue;
+        disk_drive_load_disk(machine->disk_drive, i, app_settings.disks[i].path);
+    }
+    if(app_settings.cartridge_path && app_settings.cartridge_path[0]) {
+        sam_load_rom(machine->sam, 2, app_settings.cartridge_path);
+    }
+    if(app_settings.cassette_path && app_settings.cassette_path[0]) {
+        adc_load_cassette(machine->adc, app_settings.cassette_path);
+    }
 }
 
 void machine_reset(struct machine_status *machine) {
