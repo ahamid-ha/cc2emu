@@ -63,7 +63,8 @@ struct sam_status {
     uint8_t rom0[0x2000];
     uint8_t rom1[0x2000];
     uint8_t rom2[0x3f00];
-    int rom_load_status[3];
+    uint8_t rom_dsk[0x3f00];
+    int rom_load_status[4];
 
     struct mc6821_status *pia1;
     struct mc6821_status *pia2;
@@ -78,6 +79,7 @@ void sam_reset(struct sam_status *sam);
 uint8_t sam_read(struct sam_status *sam, uint16_t addr);
 void sam_write(struct sam_status *sam, uint16_t addr, uint8_t data);
 int sam_load_rom(struct sam_status *sam, int rom_no, const char *path);
+void sam_unload_rom(struct sam_status *sam, int rom_no);
 void sam_vdg_hs_reset(struct sam_status *sam);
 void sam_vdg_fs_reset(struct sam_status *sam);
 uint8_t sam_get_vdg_data(struct sam_status *sam);

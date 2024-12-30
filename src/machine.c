@@ -20,7 +20,7 @@ void machine_init(struct machine_status *machine) {
     machine->p.bus = machine->sam;
     sam_load_rom(machine->sam, 1, "roms/BASIC.ROM");
     sam_load_rom(machine->sam, 0, "roms/extbas11.rom");
-    sam_load_rom(machine->sam, 2, "roms/DSKBASIC.ROM");
+    sam_load_rom(machine->sam, 3, "roms/DSKBASIC.ROM");
     machine->sam->pia1 = pia_create();
     machine->sam->pia2 = pia_create();
 
@@ -48,6 +48,7 @@ void machine_init(struct machine_status *machine) {
     }
     if(app_settings.cartridge_path && app_settings.cartridge_path[0]) {
         sam_load_rom(machine->sam, 2, app_settings.cartridge_path);
+        machine->cart_sense = 1;
     }
     if(app_settings.cassette_path && app_settings.cassette_path[0]) {
         adc_load_cassette(machine->adc, app_settings.cassette_path);

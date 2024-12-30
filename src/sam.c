@@ -127,8 +127,13 @@ uint8_t sam_read(struct sam_status *sam, uint16_t addr) {
             return sam->rom1[addr];
         } else if (addr <= 0xfeff) {
             addr = addr & 0x3fff;
-            if (!sam->rom_load_status[2]) return 0xff;
-            return sam->rom2[addr];
+            if (sam->rom_load_status[2]) {
+                return sam->rom2[addr];
+            }
+            if (sam->rom_load_status[3]) {
+                return sam->rom_dsk[addr];
+            }
+            return 0xff;
         }
     } else {
         if (addr <= 0xfeff) {
@@ -203,6 +208,9 @@ int sam_load_rom(struct sam_status *sam, int rom_no, const char *path) {
     } else if (rom_no == 2) {
         rom_contents = sam->rom2;
         max_rom_size = sizeof(sam->rom2);
+    } else if (rom_no == 3) {
+        rom_contents = sam->rom_dsk;
+        max_rom_size = sizeof(sam->rom_dsk);
     }
 
     if (!fp) {
@@ -238,4 +246,8 @@ int sam_load_rom(struct sam_status *sam, int rom_no, const char *path) {
     printf("Loaded rom%d %s\n", rom_no, path);
 
     return 0;
+}
+
+void sam_unload_rom(struct sam_status *sam, int rom_no) {
+    sam->rom_load_status[rom_no] = 0;
 }

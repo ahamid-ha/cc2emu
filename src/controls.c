@@ -67,6 +67,13 @@ void _settings_toggle_window(bool open_all)
     }
 }
 
+void machine_reset_and_save(void) {
+    machine_reset(controls.machine);
+    disk_drive_reset(controls.machine->disk_drive);
+    settings_save();
+    _settings_toggle_window(false);
+}
+
 static void SDLCALL _disk_selection_cb(void* data, const char* const* filelist, int filter)
 {
     int disk_no = (intptr_t)data;
@@ -112,13 +119,12 @@ static void SDLCALL _cartridge_selection_cb(void* data, const char* const* filel
     }
 
     const char *rom_path = *filelist;
-    machine_reset(controls.machine);
 
     if(!sam_load_rom(controls.machine->sam, 2, rom_path)) {
         controls.machine->cart_sense = 1;
         if (app_settings.cartridge_path) free(app_settings.cartridge_path);
         app_settings.cartridge_path = strdup(rom_path);
-        settings_save();
+        machine_reset_and_save();
     }
 }
 
@@ -161,10 +167,9 @@ void _settings_window_display() {
                 if (app_settings.cartridge_path) free(app_settings.cartridge_path);
                 app_settings.cartridge_path = NULL;
                 keyboard_buffer_reset();
-                machine_reset(controls.machine);
                 controls.machine->cart_sense = 0;
-                disk_drive_reset(controls.machine->disk_drive);
-                settings_save();
+                sam_unload_rom(controls.machine->sam, 2);
+                machine_reset_and_save();
             }
             nk_tree_state_pop(controls.ctx);
         }
@@ -256,8 +261,8 @@ void controls_display() {
         if (nk_button_label(controls.ctx, "Reset")) {
             keyboard_buffer_reset();
             machine_reset(controls.machine);
-            controls.machine->cart_sense = 0;
             disk_drive_reset(controls.machine->disk_drive);
+            _settings_toggle_window(false);
         }
 
         struct nk_color button_border_color = nk_rgba(0,0,0,255);
