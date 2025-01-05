@@ -197,6 +197,11 @@ void sam_write(struct sam_status *sam, uint16_t addr, uint8_t data) {
 }
 
 int sam_load_rom(struct sam_status *sam, int rom_no, const char *path) {
+    sam->rom_load_status[rom_no] = 0;
+    if (!path || !*path) {
+        return 0;
+    }
+
     size_t size = 0;
     FILE *fp = fopen(path, "rb");
     uint8_t *rom_contents = sam->rom0;
@@ -215,7 +220,7 @@ int sam_load_rom(struct sam_status *sam, int rom_no, const char *path) {
 
     if (!fp) {
         fprintf(stderr, "error reading rom from file %s: %s\n", path, strerror(errno));
-        exit(1);
+        return -1;
     }
 
     fseek(fp, 0L, SEEK_END);
@@ -233,8 +238,8 @@ int sam_load_rom(struct sam_status *sam, int rom_no, const char *path) {
         size_t ret = fread(rom_contents + pos, 1, remaining > 1024 ? 1024: remaining, fp);
         if (ret <=0) {
             fprintf(stderr, "fread() failed: %zu\n", ret);
-            free(rom_contents);
-            exit(EXIT_FAILURE);
+            fclose(fp);
+            return -2;
         }
         remaining -= ret;
         pos += ret;

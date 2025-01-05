@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <string.h>
 #include <confuse.h>
 #include <errno.h>
@@ -9,13 +10,26 @@
 #define ORG_NAME "emu"
 #define APP_NAME "emu"
 
+#define ROM_BASIC_DEFAULT_PATH "basic.rom"
+#define ROM_EXTENDED_BASIC_DEFAULT_PATH "extbasic.rom"
+#define ROM_DISK_BASIC_DEFAULT_PATH "dskbasic.rom"
+
 struct app_settings app_settings;
 cfg_t *cfg;
 
 void settings_init(void) {
     memset(&app_settings, 0, sizeof(struct app_settings));
 
+    app_settings.rom_basic_path = strdup(ROM_BASIC_DEFAULT_PATH);
+    if (access(ROM_EXTENDED_BASIC_DEFAULT_PATH, F_OK) == 0)
+        app_settings.rom_extended_basic_path = strdup(ROM_EXTENDED_BASIC_DEFAULT_PATH);
+    if (access(ROM_DISK_BASIC_DEFAULT_PATH, F_OK) == 0)
+        app_settings.rom_disc_basic_path = strdup(ROM_DISK_BASIC_DEFAULT_PATH);
+
     cfg_opt_t opts[] = {
+        CFG_SIMPLE_STR("rom_basic_path", &app_settings.rom_basic_path),
+        CFG_SIMPLE_STR("rom_extended_basic_path", &app_settings.rom_extended_basic_path),
+        CFG_SIMPLE_STR("rom_disc_basic_path", &app_settings.rom_disc_basic_path),
         CFG_SIMPLE_STR("cartridge_path", &app_settings.cartridge_path),
         CFG_SIMPLE_STR("cassette_path", &app_settings.cassette_path),
         CFG_SIMPLE_STR("disks_0_path", &app_settings.disks[0].path),

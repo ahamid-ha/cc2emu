@@ -18,9 +18,9 @@ void machine_init(struct machine_status *machine) {
 
     machine->sam = bus_create_sam();
     machine->p.bus = machine->sam;
-    sam_load_rom(machine->sam, 1, "roms/BASIC.ROM");
-    sam_load_rom(machine->sam, 0, "roms/extbas11.rom");
-    sam_load_rom(machine->sam, 3, "roms/DSKBASIC.ROM");
+    sam_load_rom(machine->sam, 1, app_settings.rom_basic_path);
+    sam_load_rom(machine->sam, 0, app_settings.rom_extended_basic_path);
+    sam_load_rom(machine->sam, 3, app_settings.rom_disc_basic_path);
     machine->sam->pia1 = pia_create();
     machine->sam->pia2 = pia_create();
 

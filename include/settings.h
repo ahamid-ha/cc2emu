@@ -1,5 +1,9 @@
 
 struct app_settings {
+    char *rom_basic_path;
+    char *rom_extended_basic_path;
+    char *rom_disc_basic_path;
+
     struct {
         char *path;
     } disks[4];
