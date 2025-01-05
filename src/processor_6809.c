@@ -22,7 +22,8 @@ void processor_store_16(struct processor_state *p, uint16_t addr, uint16_t data)
 
 void processor_reset(struct processor_state *p) {
     p->CC = 0;
-    p->_stopped = 0;
+    p->_halt = 0;
+    p->_instruction_fault = 0;
     p->_dump_execution = 0;
     p->_irq = 0;
     p->_irq_active_time_nano = 0;
@@ -1416,7 +1417,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
 
         default:
             printf("Unknown OPCODE %04X at %04X\n", opcode, p->PC - 1);
-            exit(1);
+            p->_instruction_fault = 1;
     }
 }
 
@@ -1431,7 +1432,7 @@ void processor_next_opcode(struct processor_state *p) {
         p->_irq_active_time_nano = p->_virtual_time_nano + (cycle_nano * 3);
      }
 
-    if (p->_stopped) {
+    if (p->_halt || p->_instruction_fault) {
         add_cycles(1);
         return;
     }

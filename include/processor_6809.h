@@ -42,7 +42,8 @@ struct processor_state {
     struct sam_status *bus;
 
     uint64_t _virtual_time_nano;
-    int _stopped;
+    int _halt; // Simulates HALT pen
+    int _instruction_fault;  // The processor is halted when an unkown instruction is met
     int _dump_execution;
     int _irq;
     uint64_t _irq_active_time_nano;

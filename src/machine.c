@@ -106,7 +106,7 @@ void machine_process_frame(struct machine_status *machine) {
             machine->_next_disk_drive_call = 0;
         }
 
-        machine->p._stopped = machine->disk_drive->HALT && !machine->disk_drive->status_2_3.DATA_REQUEST;
+        machine->p._halt = machine->disk_drive->HALT && !machine->disk_drive->status_2_3.DATA_REQUEST;
 
         if (machine->disk_drive->next_command_after_nano) {
             // schedule next call to the disk drive
