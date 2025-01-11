@@ -10,6 +10,7 @@
 #include "settings.h"
 #include "nk_sdl.h"
 #include "icons/joystick.xpm"
+#include "icons/joystick_kbd.xpm"
 
 struct {
     struct nk_context *ctx;
@@ -23,7 +24,8 @@ struct {
     enum nk_collapse_states settings_disks_state;
     enum nk_collapse_states settings_cassette_state;
 
-    struct nk_image joystick_con;
+    SDL_Texture *joystick_icon;
+    SDL_Texture *joystick_kbd_icon;
 
     char *empty_value_place_holder;  // just a buffer that represents an empty buffer
 } controls;
@@ -38,30 +40,32 @@ void error_general_file(const char *path) {
     error_msg(error_buffer);
 }
 
+SDL_Texture *init_icon_texture(char **icon) {
+    SDL_Surface *surface = IMG_ReadXPMFromArray(icon);
+    if (!surface) {
+        SDL_Log("Couldn't load icon %s\n", SDL_GetError());
+    }
+    return SDL_CreateTextureFromSurface(controls.machine->renderer, surface);
+}
+
 void controls_init(struct machine_status *machine) {
     memset(&controls, 0, sizeof(controls));
     controls.ctx = nk_sdl_init(machine->window, machine->renderer);
     controls.machine = machine;
     controls.empty_value_place_holder = strdup("<Empty>");
 
-    // TODO: icons using https://wiki.libsdl.org/SDL3/SDL_LoadBMP or https://github.com/libsdl-org/SDL_image
-    SDL_Surface *surface = IMG_ReadXPMFromArray(joystick_xpm);
-    if (!surface) {
-        SDL_Log("Couldn't load icon %s\n", SDL_GetError());
-    }
-    SDL_Texture *texure = SDL_CreateTextureFromSurface(machine->renderer, surface);
-    controls.joystick_con = nk_image_ptr(texure);
+    controls.joystick_icon = init_icon_texture(joystick_xpm);
+    controls.joystick_kbd_icon = init_icon_texture(joystick_kbd_xpm);
 }
 
 void controls_reinit(void) {
     nk_sdl_update_renderer(controls.machine->window, controls.machine->renderer);
 
-    SDL_Surface *surface = IMG_ReadXPMFromArray(joystick_xpm);
-    if (!surface) {
-        SDL_Log("Couldn't load icon %s\n", SDL_GetError());
-    }
-    SDL_Texture *texure = SDL_CreateTextureFromSurface(controls.machine->renderer, surface);
-    controls.joystick_con = nk_image_ptr(texure);
+    SDL_DestroyTexture(controls.joystick_icon);
+    controls.joystick_icon = init_icon_texture(joystick_xpm);
+
+    SDL_DestroyTexture(controls.joystick_kbd_icon);
+    controls.joystick_kbd_icon = init_icon_texture(joystick_kbd_xpm);
 }
 
 void _settings_close_window()
@@ -90,11 +94,11 @@ void _settings_toggle_window(bool open_all)
 }
 
 void machine_reset_and_save(void) {
+    _settings_close_window();
     keyboard_buffer_reset();
     machine_reset(controls.machine);
     disk_drive_reset(controls.machine->disk_drive);
     settings_save();
-    _settings_toggle_window(false);
 }
 
 static void SDLCALL _disk_selection_cb(void* data, const char* const* filelist, int filter)
@@ -215,6 +219,16 @@ void _settings_window_display() {
     struct nk_style_button button_style_original = controls.ctx->style.button;
     if(nk_begin(controls.ctx, "Settings", nk_rect(50, 50, window_w - 100, window_h - 100), NK_WINDOW_BORDER | NK_WINDOW_TITLE))
     {
+        if (nk_tree_state_push(controls.ctx, NK_TREE_NODE, "Video", &controls.settings_cartridge_state)) {
+            int artifact_colors = app_settings.artifact_colors == cfg_true ? 1 : 0;
+            nk_checkbox_label(controls.ctx, "Enable Artifact Colors", &artifact_colors);
+            if (artifact_colors != (app_settings.artifact_colors == cfg_true ? 1 : 0)) {
+                app_settings.artifact_colors = cfg_true ? artifact_colors : cfg_false;
+                settings_save();
+            }
+            nk_tree_state_pop(controls.ctx);
+        }
+
         if (nk_tree_state_push(controls.ctx, NK_TREE_NODE, "Rom", &controls.settings_cartridge_state)) {
             nk_layout_row_template_begin(controls.ctx, 30);
             nk_layout_row_template_push_static(controls.ctx, 100);
@@ -386,7 +400,7 @@ void controls_display() {
             keyboard_buffer_reset();
             machine_reset(controls.machine);
             disk_drive_reset(controls.machine->disk_drive);
-            _settings_toggle_window(false);
+            _settings_close_window();
         }
 
         struct nk_color button_border_color = nk_rgba(0,0,0,255);
@@ -415,16 +429,26 @@ void controls_display() {
         if (!controls.machine->adc->sound_enabled && controls.joystick_selection != controls.machine->adc->adc_level && controls.machine->adc->switch_selection < 2) button_border_color = nk_rgba(255,255,255,255);
         nk_style_push_color(controls.ctx, &controls.ctx->style.button.border_color, button_border_color);
         // if (nk_button_label(controls.ctx, "Left Joy")) {
-        if (nk_button_image(controls.ctx, controls.joystick_con)) {
-            controls.settings_window_state = !controls.settings_window_state;
+        if (nk_button_image(controls.ctx, nk_image_ptr(controls.machine->_joy_emulation && controls.machine->_joy_emulation_side == 0 ? controls.joystick_kbd_icon : controls.joystick_icon))) {
+            if (controls.machine->_joy_emulation && controls.machine->_joy_emulation_side == 0) {
+                controls.machine->_joy_emulation = 0;
+            } else {
+                controls.machine->_joy_emulation = 1;
+                controls.machine->_joy_emulation_side = 0;
+            }
         }
         nk_style_pop_color(controls.ctx);
         button_border_color = nk_rgba(0,0,0,255);
         // visual indication that the right joystick is being pulled
         if (controls.joystick_selection != controls.machine->adc->adc_level && controls.machine->adc->switch_selection > 1) button_border_color = nk_rgba(255,255,255,255);
         nk_style_push_color(controls.ctx, &controls.ctx->style.button.border_color, button_border_color);
-        if (nk_button_label(controls.ctx, "Right Joy")) {
-            controls.settings_window_state = !controls.settings_window_state;
+        if (nk_button_image(controls.ctx, nk_image_ptr(controls.machine->_joy_emulation && controls.machine->_joy_emulation_side == 1 ? controls.joystick_kbd_icon : controls.joystick_icon))) {
+            if (controls.machine->_joy_emulation && controls.machine->_joy_emulation_side == 1) {
+                controls.machine->_joy_emulation = 0;
+            } else {
+                controls.machine->_joy_emulation = 1;
+                controls.machine->_joy_emulation_side = 1;
+            }
         }
         nk_style_pop_color(controls.ctx);
         controls.joystick_selection = controls.machine->adc->adc_level;

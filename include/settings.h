@@ -1,3 +1,5 @@
+#include <confuse.h>
+
 
 struct app_settings {
     char *rom_basic_path;
@@ -12,6 +14,8 @@ struct app_settings {
     char *cassette_path;
 
     char *config_path;
+
+    cfg_bool_t artifact_colors;
 };
 
 extern struct app_settings app_settings;

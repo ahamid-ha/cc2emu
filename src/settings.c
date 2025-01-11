@@ -25,6 +25,7 @@ void settings_init(void) {
         app_settings.rom_extended_basic_path = strdup(ROM_EXTENDED_BASIC_DEFAULT_PATH);
     if (access(ROM_DISK_BASIC_DEFAULT_PATH, F_OK) == 0)
         app_settings.rom_disc_basic_path = strdup(ROM_DISK_BASIC_DEFAULT_PATH);
+    app_settings.artifact_colors = 1;
 
     cfg_opt_t opts[] = {
         CFG_SIMPLE_STR("rom_basic_path", &app_settings.rom_basic_path),
@@ -36,6 +37,7 @@ void settings_init(void) {
         CFG_SIMPLE_STR("disks_1_path", &app_settings.disks[1].path),
         CFG_SIMPLE_STR("disks_2_path", &app_settings.disks[2].path),
         CFG_SIMPLE_STR("disks_3_path", &app_settings.disks[3].path),
+        CFG_SIMPLE_BOOL("video_artifact_colors", &app_settings.artifact_colors),
         CFG_END()
     };
 

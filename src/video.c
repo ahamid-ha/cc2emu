@@ -3,6 +3,7 @@
 #include "sam.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include "settings.h"
 
 #define COLOR_GREEN 0x1cd510ff
 #define COLOR_YELLOW 0xe2db0fff
@@ -15,6 +16,7 @@
 #define COLOR_BLACK 0x101010ff
 #define COLOR_DARK_GREEN 0x003400ff
 #define COLOR_DARK_ORANGE 0x321400ff
+#define COLOR_WHITE 0xffffffff
 
 uint32_t _text_render_colors[] = {
     COLOR_GREEN,
@@ -25,6 +27,13 @@ uint32_t _text_render_colors[] = {
     COLOR_CYAN,
     COLOR_MAGENTA,
     COLOR_ORANGE
+};
+
+uint32_t _artifact_render_colors[] = {
+    COLOR_BLACK,
+    COLOR_BLUE,
+    COLOR_ORANGE,
+    COLOR_WHITE
 };
 
 
@@ -143,6 +152,7 @@ uint64_t video_process_next(struct video_status *v) {
         long byte_time;
         int pixels;
         int y = v->field_row_number - (13 + 25);
+        bool artifact_mode;
         uint8_t data = sam_get_vdg_data(v->sam);
         sam_vdg_increment(v->sam);
         if (v->enable_graphics) {
@@ -182,10 +192,23 @@ uint64_t video_process_next(struct video_status *v) {
                     break;
             }
             int is_colors = ((v->graphics_mode & 1) == 0);
+
+            if (pixels == 1 && app_settings.artifact_colors) {
+                is_colors = 1;
+                pixels = 2;
+                artifact_mode = 1;
+            }
+
             if (is_colors) {
                 for (int bit_pos=0; bit_pos < 8; bit_pos+=2) {
-                    int color_index = (data & 0b11000000) >> 6 | (v->css ? 0b100 : 0);
-                    uint32_t color = _text_render_colors[color_index];
+                    uint32_t color;
+                    if (!artifact_mode) {
+                        int color_index = (data & 0b11000000) >> 6 | (v->css ? 0b100 : 0);
+                        color = _text_render_colors[color_index];
+                    } else {
+                        int color_index = (data & 0b11000000) >> 6;
+                        color = _artifact_render_colors[color_index];
+                    }
                     data = data << 2;
                     for(int i=0; i < pixels; i++) {
                         draw_pixel(v->_x++, y, color);
