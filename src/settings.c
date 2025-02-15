@@ -7,8 +7,8 @@
 #include <SDL3/SDL_filesystem.h>
 #include "settings.h"
 
-#define ORG_NAME "emu"
-#define APP_NAME "emu"
+#define ORG_NAME "cc2emu"
+#define APP_NAME "cc2emu"
 
 #define ROM_BASIC_DEFAULT_PATH "basic.rom"
 #define ROM_EXTENDED_BASIC_DEFAULT_PATH "extbasic.rom"

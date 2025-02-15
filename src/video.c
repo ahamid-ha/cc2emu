@@ -86,8 +86,8 @@ uint64_t video_start_field(struct video_status *v) {
     v->signal_fs = 1;
 
     if(!SDL_LockTexture( v->texture, NULL, (void**)&v->_pixels, &v->_pitch )) {
-        printf("SDL_LockTexture failed\n");
-        exit(1);
+        printf("SDL_LockTexture failed %s %p\n", SDL_GetError(), v->texture);
+        return -1;
     }
     v->_pitch = v->_pitch >> 2;
 

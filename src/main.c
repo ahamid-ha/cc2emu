@@ -71,7 +71,10 @@ int main(int argc, char* argv[]) {
             SDL_SetRenderDrawColor(machine->renderer, 0, 0, 0, 255);
         SDL_RenderClear(machine->renderer);
 
-        machine_process_frame(machine);
+        if(machine_process_frame(machine)) {
+            video_reinitialize(machine->video, machine->renderer);
+            controls_reinit();
+        }
 
         controls_display();
 
@@ -91,14 +94,6 @@ int main(int argc, char* argv[]) {
                 }
 
                 if (event.type == SDL_EVENT_WINDOW_RESIZED || event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED || event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED) {
-                    SDL_DestroyRenderer(machine->renderer);
-                    machine->renderer = SDL_CreateRenderer(machine->window, NULL);
-                    if (!machine->renderer) {
-                        printf("Failed to create renderer: %s\n", SDL_GetError());
-                        SDL_DestroyWindow(machine->window);
-                        SDL_Quit();
-                        return -1;
-                    }
                     video_reinitialize(machine->video, machine->renderer);
                     controls_reinit();
                 }

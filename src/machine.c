@@ -70,10 +70,10 @@ void machine_reset(struct machine_status *machine) {
     Also runs the devices according to the processor virtual time
     This includes the video rendering
 */
-void machine_process_frame(struct machine_status *machine) {
+int machine_process_frame(struct machine_status *machine) {
     uint64_t next_video_call_after_ns = video_start_field(machine->video);
     uint64_t next_video_call = next_video_call_after_ns + machine->p._virtual_time_nano;
-    while (next_video_call_after_ns) {
+    while (next_video_call_after_ns > 0) {
         processor_next_opcode(&machine->p);
 
         if (machine->p._virtual_time_nano >= machine->_next_keyboard_poll_ns && !keyboard_buffer_empty() ) {
@@ -117,7 +117,10 @@ void machine_process_frame(struct machine_status *machine) {
         machine->p._irq = mc6821_interrupt_state(machine->sam->pia1);  // TODO: should be done in a better way
         machine->p._firq = mc6821_interrupt_state(machine->sam->pia2);  // TODO: should be done in a better way
     }
-    video_end_field(machine->video);
+    if (!next_video_call_after_ns) {
+        video_end_field(machine->video);
+    }
+    return (int)next_video_call_after_ns;
 }
 
 #define KEY_BOARD_BUFFER_LENGTH 2000

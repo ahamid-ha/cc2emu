@@ -31,7 +31,7 @@ struct machine_status {
 
 void machine_init(struct machine_status *machine);
 void machine_reset(struct machine_status *machine);
-void machine_process_frame(struct machine_status *machine);
+int machine_process_frame(struct machine_status *machine);
 void machine_handle_input_begin(struct machine_status *machine);
 void machine_handle_input(struct machine_status *machine, SDL_Event *event);
 void machine_send_key(uint32_t key_code);
