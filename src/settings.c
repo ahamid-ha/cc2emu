@@ -20,6 +20,9 @@ cfg_t *cfg;
 void settings_init(void) {
     memset(&app_settings, 0, sizeof(struct app_settings));
 
+    app_settings.joy_emulation_mode[0] = Joy_Emulation_Keyboard;
+    app_settings.joy_emulation_mode[1] = Joy_Emulation_None;
+
     app_settings.rom_basic_path = strdup(ROM_BASIC_DEFAULT_PATH);
     if (access(ROM_EXTENDED_BASIC_DEFAULT_PATH, F_OK) == 0)
         app_settings.rom_extended_basic_path = strdup(ROM_EXTENDED_BASIC_DEFAULT_PATH);
@@ -38,6 +41,8 @@ void settings_init(void) {
         CFG_SIMPLE_STR("disks_2_path", &app_settings.disks[2].path),
         CFG_SIMPLE_STR("disks_3_path", &app_settings.disks[3].path),
         CFG_SIMPLE_BOOL("video_artifact_colors", &app_settings.artifact_colors),
+        CFG_SIMPLE_INT("joy_1_emulation_mode", &app_settings.joy_emulation_mode[0]),
+        CFG_SIMPLE_INT("joy_2_emulation_mode", &app_settings.joy_emulation_mode[1]),
         CFG_END()
     };
 

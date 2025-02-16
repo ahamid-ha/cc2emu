@@ -1,3 +1,5 @@
+// Based on https://github.com/Immediate-Mode-UI/Nuklear/blob/master/demo/sdl_renderer/nuklear_sdl_renderer.h
+
 #include <SDL3/SDL.h>
 #include "nk_sdl.h"
 

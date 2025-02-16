@@ -23,9 +23,12 @@ struct machine_status {
 
     uint64_t _next_disk_drive_call;  // tracks the disk timing
     uint64_t _next_keyboard_poll_ns;
-    int _joy_emulation;
-    int _joy_emulation_side;  // 0: left, 1: right
 
+    int settings_page_is_open;
+
+    int _joy_emulation[2];    // enable/disable keyboard/mouse joystick emulation
+    SDL_Joystick *joysticks[2];
+    SDL_JoystickID joystick_ids[2];
 };
 
 
@@ -33,7 +36,7 @@ void machine_init(struct machine_status *machine);
 void machine_reset(struct machine_status *machine);
 int machine_process_frame(struct machine_status *machine);
 void machine_handle_input_begin(struct machine_status *machine);
-void machine_handle_input(struct machine_status *machine, SDL_Event *event);
+int machine_handle_input(struct machine_status *machine, SDL_Event *event);
 void machine_send_key(uint32_t key_code);
 void keyboard_buffer_reset();
 

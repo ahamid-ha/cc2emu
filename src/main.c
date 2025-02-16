@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) {
     signal(SIGSEGV, segv_handler);
 
     // Initialize SDL
-    if (!SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO)) {
+    if (!SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_JOYSTICK)) {
         printf("Error initializing SDL: %s\n", SDL_GetError());
         return -1;
     }
@@ -38,6 +38,7 @@ int main(int argc, char* argv[]) {
     settings_init();
 
     struct machine_status *machine = malloc(sizeof(struct machine_status));
+    memset(machine, 0, sizeof(struct machine_status));
 
     // Create a window and renderer
     machine->window = SDL_CreateWindow("Emulator", 256 * 4 + 40, 192 * 4 + 40 + 40, 0);
@@ -54,6 +55,13 @@ int main(int argc, char* argv[]) {
         SDL_DestroyWindow(machine->window);
         SDL_Quit();
         return -1;
+    }
+
+    if(!SDL_SetRenderVSync(machine->renderer, -1)) {
+        printf( "Could not enable adaptive VSync, SDL error: %s. Trying VSync ... \n", SDL_GetError());
+        if(!SDL_SetRenderVSync(machine->renderer, 1)) {
+            printf( "Could not enable VSync! SDL error: %s\n", SDL_GetError() );
+        }
     }
 
     controls_init(machine);
@@ -78,17 +86,14 @@ int main(int argc, char* argv[]) {
 
         controls_display();
 
-        // Update the renderer
-        SDL_RenderPresent(machine->renderer);
-
         uint64_t time_ns = nanos();
         machine_handle_input_begin(machine);
 
         controls_input_begin();
-        while (machine->p._virtual_time_nano > time_ns) {
+        do {
             // Handle events
             SDL_Event event;
-            while (SDL_WaitEventTimeout(&event, 10)) {
+            while (machine->p._virtual_time_nano > time_ns && SDL_WaitEventTimeout(&event, 10)) {
                 if (event.type == SDL_EVENT_QUIT) {
                     running = false;
                 }
@@ -98,25 +103,26 @@ int main(int argc, char* argv[]) {
                     controls_reinit();
                 }
 
-                machine_handle_input(machine, &event);
+                if (!machine_handle_input(machine, &event)) {
+                    // event not handled, so pass it to the gui controls
+                    nk_sdl_handle_event(&event);
+                }
 
                 if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F10) {
                     machine_reset(machine);
                     machine->cart_sense = 0;
                     disk_drive_reset(machine->disk_drive);
                 }
-                if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F5) {
-                    machine->_joy_emulation = !machine->_joy_emulation;
-                    printf("Set Joy Emulator %d\n", machine->_joy_emulation);
-                }
-
-                nk_sdl_handle_event(&event);
+                time_ns = nanos();
             }
 
             time_ns = nanos();
-        }
+        } while (machine->p._virtual_time_nano > time_ns);
+        controls_input_end();
+
+        // Update the renderer
+        SDL_RenderPresent(machine->renderer);
     }
-    controls_input_end();
 
     // Clean up resources before exiting
     SDL_DestroyRenderer(machine->renderer);

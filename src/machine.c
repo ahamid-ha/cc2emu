@@ -37,8 +37,10 @@ void machine_init(struct machine_status *machine) {
     machine->_next_disk_drive_call = 0;
     machine->p._virtual_time_nano = nanos();  // sync time
 
-    machine->_joy_emulation = 0;
-    machine->_joy_emulation_side = 1;  // 0: left, 1: right
+    machine->_joy_emulation[0] = 0;
+    machine->_joy_emulation[1] = 0;
+    machine->joysticks[0] = 0;
+    machine->joysticks[1] = 0;
 
     machine->_next_keyboard_poll_ns = 0;
 
@@ -194,61 +196,206 @@ void machine_handle_input_begin(struct machine_status *machine) {
     // nothing for now
 }
 
-void machine_handle_input(struct machine_status *machine, SDL_Event *event) {
-    if (machine->_joy_emulation &&
-            (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) &&
-            !(event->key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT)) &&
-            (event->key.key == SDLK_LEFT || event->key.key == SDLK_RIGHT ||
-                event->key.key == SDLK_UP || event->key.key == SDLK_DOWN ||
-                event->key.key == SDLK_SPACE || event->key.key == SDLK_RETURN ||
-                event->key.key == '[' || event->key.key == ']'
-            )
-        ) {
-            if (event->type == SDL_EVENT_KEY_DOWN && event->key.key == '[') {
-                machine->_joy_emulation_side = 0;
-                printf("Keyboard switched to Left Joystick\n");
+int machine_handle_joystick_event(struct machine_status *machine, SDL_Event *event) {
+    int event_was_handled = 0;
+    switch (event->type)
+    {
+        case SDL_EVENT_JOYSTICK_ADDED:
+        case SDL_EVENT_JOYSTICK_REMOVED:
+            // Nuke everything and re-initialize the 1st two joysticks
+            {
+                for (int i=0; i < 2; i++) {
+                    if (machine->joysticks[i]) {
+                        SDL_CloseJoystick(machine->joysticks[i]);
+                        machine->joysticks[i] = NULL;
+                    }
+                }
+                int joy_count;
+                SDL_JoystickID *ids = SDL_GetJoysticks(&joy_count);
+                printf("Joysticks connected count: %d\n", joy_count);
+                for (int i=0; i < 2 && i < joy_count; i++) {
+                    machine->joysticks[i] = SDL_OpenJoystick(ids[i]);
+                    machine->joystick_ids[i] = ids[i];
+                }
             }
-            if (event->type == SDL_EVENT_KEY_DOWN && event->key.key == ']') {
-                machine->_joy_emulation_side = 1;
-                printf("Keyboard switched to Right Joystick\n");
+            event_was_handled = 1;
+            break;
+
+        case SDL_EVENT_JOYSTICK_AXIS_MOTION:
+            for (int joy_number = 0; joy_number < 2; joy_number++) {
+                if (
+                    (app_settings.joy_emulation_mode[joy_number] == Joy_Emulation_Joy1 && machine->joysticks[0] && machine->joystick_ids[0] == event->jaxis.which) ||
+                    (app_settings.joy_emulation_mode[joy_number] == Joy_Emulation_Joy2 && machine->joysticks[1] && machine->joystick_ids[1] == event->jaxis.which)
+                ) {
+                    switch(joy_number) {
+                        case 0: // left
+                            if (event->jaxis.axis == 0) machine->adc->input_joy_0 = event->jaxis.value * 2.5 / 32767 + 2.5;
+                            if (event->jaxis.axis == 1) machine->adc->input_joy_1 = event->jaxis.value * 2.5 / 32767 + 2.5;
+                            break;
+                        case 1: // right
+                            if (event->jaxis.axis == 0) machine->adc->input_joy_2 = event->jaxis.value * 2.5 / 32767 + 2.5;
+                            if (event->jaxis.axis == 1) machine->adc->input_joy_3 = event->jaxis.value * 2.5 / 32767 + 2.5;
+                            break;
+                    }
+                    event_was_handled = 1;
+                }
             }
-            if (machine->_joy_emulation_side == 1) {
-                switch(event->key.key) {
-                    case SDLK_LEFT: machine->adc->input_joy_2 = event->type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
-                    case SDLK_RIGHT: machine->adc->input_joy_2 = event->type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
-                    case SDLK_UP: machine->adc->input_joy_3 = event->type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
-                    case SDLK_DOWN: machine->adc->input_joy_3 = event->type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
-                    case SDLK_RETURN:
-                    case SDLK_SPACE:
-                        if (event->type == SDL_EVENT_KEY_DOWN) machine->keyboard->other_inputs &= 0b11111101;
+            break;
+
+        case SDL_EVENT_JOYSTICK_BUTTON_UP: /* MOUSEBUTTONUP & MOUSEBUTTONDOWN share same routine */
+        case SDL_EVENT_JOYSTICK_BUTTON_DOWN:
+            for (int joy_number = 0; joy_number < 2; joy_number++) {
+                if (
+                    (app_settings.joy_emulation_mode[joy_number] == Joy_Emulation_Joy1 && machine->joysticks[0] && machine->joystick_ids[0] == event->jbutton.which) ||
+                    (app_settings.joy_emulation_mode[joy_number] == Joy_Emulation_Joy2 && machine->joysticks[1] && machine->joystick_ids[1] == event->jbutton.which)
+                ) {
+                    event_was_handled = 1;
+
+                    switch(joy_number) {
+                        case 0: // left
+                            if (event->type == SDL_EVENT_JOYSTICK_BUTTON_DOWN) machine->keyboard->other_inputs &= 0b11111110;
+                            else machine->keyboard->other_inputs |= 0b1;
+                            mc6821_peripheral_input(machine->sam->pia1, 0, machine->keyboard->other_inputs, 0b1);
+                            break;
+                        case 1: // right
+                            if (event->type == SDL_EVENT_JOYSTICK_BUTTON_DOWN) machine->keyboard->other_inputs &= 0b11111101;
+                            else machine->keyboard->other_inputs |= 0b10;
+                            mc6821_peripheral_input(machine->sam->pia1, 0, machine->keyboard->other_inputs, 0b10);
+                            break;
+                    }
+                }
+            }
+            break;
+
+        case SDL_EVENT_MOUSE_MOTION:
+            for (int joy_number = 0; joy_number < 2; joy_number++) {
+                if (app_settings.joy_emulation_mode[joy_number] != Joy_Emulation_Mouse || !machine->_joy_emulation[joy_number]) continue;
+                event_was_handled = 1;
+                float scale_x = 5.0 / machine->video->_output_port.w;
+                float scale_y = 5.0 / machine->video->_output_port.h;
+
+                switch(joy_number) {
+                    case 0: // left
+                        machine->adc->input_joy_0 += event->motion.xrel * scale_x;
+                        machine->adc->input_joy_1 += event->motion.yrel * scale_y;
+                        if (machine->adc->input_joy_0 < 0) machine->adc->input_joy_0 = 0;
+                        if (machine->adc->input_joy_0 > 5) machine->adc->input_joy_0 = 5;
+                        if (machine->adc->input_joy_1 < 0) machine->adc->input_joy_1 = 0;
+                        if (machine->adc->input_joy_1 > 5) machine->adc->input_joy_1 = 5;
+                        break;
+                    case 1: // right
+                        machine->adc->input_joy_2 += event->motion.xrel * scale_x;
+                        machine->adc->input_joy_3 += event->motion.yrel * scale_y;
+                        if (machine->adc->input_joy_2 < 0) machine->adc->input_joy_2 = 0;
+                        if (machine->adc->input_joy_2 > 5) machine->adc->input_joy_2 = 5;
+                        if (machine->adc->input_joy_3 < 0) machine->adc->input_joy_3 = 0;
+                        if (machine->adc->input_joy_3 > 5) machine->adc->input_joy_3 = 5;
+                        break;
+                }
+            }
+            break;
+
+        case SDL_EVENT_MOUSE_BUTTON_UP: /* MOUSEBUTTONUP & MOUSEBUTTONDOWN share same routine */
+        case SDL_EVENT_MOUSE_BUTTON_DOWN:
+            for (int joy_number = 0; joy_number < 2; joy_number++) {
+                if (app_settings.joy_emulation_mode[joy_number] != Joy_Emulation_Mouse || !machine->_joy_emulation[joy_number]) continue;
+                event_was_handled = 1;
+
+                if (event->button.button == SDL_BUTTON_RIGHT) {
+                    machine->_joy_emulation[0] = 0;
+                    machine->_joy_emulation[1] = 0;
+                    SDL_SetWindowRelativeMouseMode(machine->window, machine->_joy_emulation[0] || machine->_joy_emulation[1]);
+                    continue;
+                }
+
+                switch(joy_number) {
+                    case 0: // left
+                        if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN) machine->keyboard->other_inputs &= 0b11111110;
+                        else machine->keyboard->other_inputs |= 0b1;
+                        mc6821_peripheral_input(machine->sam->pia1, 0, machine->keyboard->other_inputs, 0b1);
+                        break;
+                    case 1: // right
+                        if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN) machine->keyboard->other_inputs &= 0b11111101;
                         else machine->keyboard->other_inputs |= 0b10;
                         mc6821_peripheral_input(machine->sam->pia1, 0, machine->keyboard->other_inputs, 0b10);
                         break;
                 }
-            } else {
-                switch(event->key.key) {
-                    // left
-                    case SDLK_LEFT: machine->adc->input_joy_0 = event->type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
-                    case SDLK_RIGHT: machine->adc->input_joy_0 = event->type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
-                    case SDLK_UP: machine->adc->input_joy_1 = event->type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
-                    case SDLK_DOWN: machine->adc->input_joy_1 = event->type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
-                    case SDLK_RETURN:
-                    case SDLK_SPACE:
-                        if (event->type == SDL_EVENT_KEY_DOWN) machine->keyboard->other_inputs &= 0b11111110;
-                        else machine->keyboard->other_inputs |= 0b1;
-                        mc6821_peripheral_input(machine->sam->pia1, 0, machine->keyboard->other_inputs, 0b1);
+            }
+            break;
+
+        case SDL_EVENT_KEY_DOWN:
+        case SDL_EVENT_KEY_UP:
+            for (int joy_number = 0; joy_number < 2; joy_number++) {
+                if (app_settings.joy_emulation_mode[joy_number] != Joy_Emulation_Keyboard || !machine->_joy_emulation[joy_number]) continue;
+                if (!(event->key.key == SDLK_LEFT || event->key.key == SDLK_RIGHT ||
+                    event->key.key == SDLK_UP || event->key.key == SDLK_DOWN ||
+                    event->key.key == SDLK_SPACE || event->key.key == SDLK_RETURN)) continue;
+                event_was_handled = 1;
+
+                switch(joy_number) {
+                    case 0: // left
+                        switch(event->key.key) {
+                            case SDLK_LEFT: machine->adc->input_joy_0 = event->type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
+                            case SDLK_RIGHT: machine->adc->input_joy_0 = event->type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
+                            case SDLK_UP: machine->adc->input_joy_1 = event->type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
+                            case SDLK_DOWN: machine->adc->input_joy_1 = event->type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
+                            case SDLK_RETURN:
+                            case SDLK_SPACE:
+                                if (event->type == SDL_EVENT_KEY_DOWN) machine->keyboard->other_inputs &= 0b11111110;
+                                else machine->keyboard->other_inputs |= 0b1;
+                                mc6821_peripheral_input(machine->sam->pia1, 0, machine->keyboard->other_inputs, 0b1);
+                                break;
+                        }
+                        break;
+                    case 1: // right
+                        switch(event->key.key) {
+                            case SDLK_LEFT: machine->adc->input_joy_2 = event->type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
+                            case SDLK_RIGHT: machine->adc->input_joy_2 = event->type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
+                            case SDLK_UP: machine->adc->input_joy_3 = event->type == SDL_EVENT_KEY_DOWN ? 1 : 2.5; break;
+                            case SDLK_DOWN: machine->adc->input_joy_3 = event->type == SDL_EVENT_KEY_DOWN ? 4 : 2.5; break;
+                            case SDLK_RETURN:
+                            case SDLK_SPACE:
+                                if (event->type == SDL_EVENT_KEY_DOWN) machine->keyboard->other_inputs &= 0b11111101;
+                                else machine->keyboard->other_inputs |= 0b10;
+                                mc6821_peripheral_input(machine->sam->pia1, 0, machine->keyboard->other_inputs, 0b10);
+                                break;
+                        }
                         break;
                 }
             }
-            // printf("event->key.key=%d \n", event->key.key);
-    } else {
-        if ((event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) && !(event->key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT))) {
-            keyboard_buffer_push(event);
+            break;
+    }
+
+    return event_was_handled;
+}
+
+int machine_handle_input(struct machine_status *machine, SDL_Event *event) {
+    if (machine->settings_page_is_open) return 0;
+
+    if (machine_handle_joystick_event(machine, event))
+        return 1;
+
+
+    if (event->type == SDL_EVENT_KEY_DOWN && event->key.key == SDLK_F5) {
+        int emulation = machine->_joy_emulation[0] || machine->_joy_emulation[1];
+        emulation = !emulation;
+        machine->_joy_emulation[0] = emulation;
+        machine->_joy_emulation[1] = emulation;
+
+        if (app_settings.joy_emulation_mode[0] == Joy_Emulation_Mouse || app_settings.joy_emulation_mode[1] == Joy_Emulation_Mouse) {
+            SDL_SetWindowRelativeMouseMode(machine->window, emulation);
         }
+        printf("Set Joy Emulator %d\n", emulation);
+    }
+
+    if ((event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) && !(event->key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT))) {
+        keyboard_buffer_push(event);
+        return 1;
     }
 
     if (event->type == SDL_EVENT_KEY_DOWN && event->key.mod & SDL_KMOD_CTRL && event->key.key == SDLK_V) {
         clipboard_copy();
+        return 1;
     }
-
+    return 0;
 }

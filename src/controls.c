@@ -23,6 +23,7 @@ struct {
     enum nk_collapse_states settings_cartridge_state;
     enum nk_collapse_states settings_disks_state;
     enum nk_collapse_states settings_cassette_state;
+    enum nk_collapse_states settings_joystick_state;
 
     SDL_Texture *joystick_icon;
     SDL_Texture *joystick_kbd_icon;
@@ -80,6 +81,7 @@ void _settings_open_window(bool open_all)
     controls.settings_cartridge_state = section_state;
     controls.settings_disks_state = section_state;
     controls.settings_cassette_state = section_state;
+    controls.settings_joystick_state = section_state;
 
     controls.settings_window_state = true;
 }
@@ -377,6 +379,30 @@ void _settings_window_display() {
             nk_tree_state_pop(controls.ctx);
         }
     }
+
+    if (nk_tree_state_push(controls.ctx, NK_TREE_NODE, "Joysticks", &controls.settings_joystick_state)) {
+        nk_layout_row_template_begin(controls.ctx, 30);
+        nk_layout_row_template_push_dynamic(controls.ctx);
+        nk_layout_row_template_end(controls.ctx);
+        struct nk_vec2 size = {100, 100};
+        const char *joy_emulation_options[] = {"None", "Keyboard", "Mouse", "Joystick 1", "Joystick 2"};
+        nk_label(controls.ctx, "Left", NK_TEXT_LEFT);
+        int current_joy_emulation_mode = app_settings.joy_emulation_mode[0];
+        nk_combobox(controls.ctx, joy_emulation_options, 5, &current_joy_emulation_mode, 20, size);
+        if (current_joy_emulation_mode != app_settings.joy_emulation_mode[0]) {
+            app_settings.joy_emulation_mode[0] = current_joy_emulation_mode;
+            settings_save();
+        }
+
+        nk_label(controls.ctx, "Right", NK_TEXT_LEFT);
+        current_joy_emulation_mode = app_settings.joy_emulation_mode[1];
+        nk_combobox(controls.ctx, joy_emulation_options, 5, &current_joy_emulation_mode, 20, size);
+        if (current_joy_emulation_mode != app_settings.joy_emulation_mode[1]) {
+            app_settings.joy_emulation_mode[1] = current_joy_emulation_mode;
+            settings_save();
+        }
+        nk_tree_state_pop(controls.ctx);
+    }
     nk_end(controls.ctx);
 }
 
@@ -428,13 +454,15 @@ void controls_display() {
         // visual indication that the left joystick is being pulled
         if (!controls.machine->adc->sound_enabled && controls.joystick_selection != controls.machine->adc->adc_level && controls.machine->adc->switch_selection < 2) button_border_color = nk_rgba(255,255,255,255);
         nk_style_push_color(controls.ctx, &controls.ctx->style.button.border_color, button_border_color);
-        // if (nk_button_label(controls.ctx, "Left Joy")) {
-        if (nk_button_image(controls.ctx, nk_image_ptr(controls.machine->_joy_emulation && controls.machine->_joy_emulation_side == 0 ? controls.joystick_kbd_icon : controls.joystick_icon))) {
-            if (controls.machine->_joy_emulation && controls.machine->_joy_emulation_side == 0) {
-                controls.machine->_joy_emulation = 0;
-            } else {
-                controls.machine->_joy_emulation = 1;
-                controls.machine->_joy_emulation_side = 0;
+        int emulation = controls.machine->_joy_emulation[0] || controls.machine->_joy_emulation[1];
+        int is_left_joy_emulated = app_settings.joy_emulation_mode[0] == Joy_Emulation_Keyboard || app_settings.joy_emulation_mode[0] == Joy_Emulation_Mouse;
+        if (nk_button_image(controls.ctx, nk_image_ptr(controls.machine->_joy_emulation[0] && is_left_joy_emulated ? controls.joystick_kbd_icon : controls.joystick_icon))) {
+            emulation = !emulation;
+            controls.machine->_joy_emulation[0] = emulation;
+            controls.machine->_joy_emulation[1] = emulation;
+
+            if (app_settings.joy_emulation_mode[0] == Joy_Emulation_Mouse || app_settings.joy_emulation_mode[1] == Joy_Emulation_Mouse) {
+                SDL_SetWindowRelativeMouseMode(controls.machine->window, controls.machine->_joy_emulation[0] || controls.machine->_joy_emulation[1]);
             }
         }
         nk_style_pop_color(controls.ctx);
@@ -442,12 +470,13 @@ void controls_display() {
         // visual indication that the right joystick is being pulled
         if (controls.joystick_selection != controls.machine->adc->adc_level && controls.machine->adc->switch_selection > 1) button_border_color = nk_rgba(255,255,255,255);
         nk_style_push_color(controls.ctx, &controls.ctx->style.button.border_color, button_border_color);
-        if (nk_button_image(controls.ctx, nk_image_ptr(controls.machine->_joy_emulation && controls.machine->_joy_emulation_side == 1 ? controls.joystick_kbd_icon : controls.joystick_icon))) {
-            if (controls.machine->_joy_emulation && controls.machine->_joy_emulation_side == 1) {
-                controls.machine->_joy_emulation = 0;
-            } else {
-                controls.machine->_joy_emulation = 1;
-                controls.machine->_joy_emulation_side = 1;
+        int is_right_joy_emulated = app_settings.joy_emulation_mode[1] == Joy_Emulation_Keyboard || app_settings.joy_emulation_mode[1] == Joy_Emulation_Mouse;
+        if (nk_button_image(controls.ctx, nk_image_ptr(controls.machine->_joy_emulation[1] && is_right_joy_emulated ? controls.joystick_kbd_icon : controls.joystick_icon))) {
+            emulation = !emulation;
+            controls.machine->_joy_emulation[0] = emulation;
+            controls.machine->_joy_emulation[1] = emulation;
+            if (app_settings.joy_emulation_mode[1] == Joy_Emulation_Mouse || app_settings.joy_emulation_mode[1] == Joy_Emulation_Mouse) {
+                SDL_SetWindowRelativeMouseMode(controls.machine->window, controls.machine->_joy_emulation[0] || controls.machine->_joy_emulation[1]);
             }
         }
         nk_style_pop_color(controls.ctx);
@@ -462,6 +491,9 @@ void controls_display() {
 
     if (controls.settings_window_state){
         _settings_window_display();
+        controls.machine->settings_page_is_open = 1;
+    } {
+        controls.machine->settings_page_is_open = 0;
     }
 
     nk_sdl_render(NK_ANTI_ALIASING_ON);
