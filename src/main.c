@@ -58,7 +58,7 @@ int main(int argc, char* argv[]) {
     }
 
     if(!SDL_SetRenderVSync(machine->renderer, -1)) {
-        printf( "Could not enable adaptive VSync, SDL error: %s. Trying VSync ... \n", SDL_GetError());
+        printf( "Could not enable adaptive VSync, SDL error: %s. Trying VSync instead.\n", SDL_GetError());
         if(!SDL_SetRenderVSync(machine->renderer, 1)) {
             printf( "Could not enable VSync! SDL error: %s\n", SDL_GetError() );
         }
@@ -87,13 +87,22 @@ int main(int argc, char* argv[]) {
         controls_display();
 
         uint64_t time_ns = nanos();
+        if (time_ns - machine->p._virtual_time_nano > 5000) {
+            // we are out of sync, so re-sync the processor time
+            machine->p._virtual_time_nano = time_ns + 1;
+        }
+
         machine_handle_input_begin(machine);
 
         controls_input_begin();
-        do {
-            // Handle events
-            SDL_Event event;
-            while (machine->p._virtual_time_nano > time_ns && SDL_WaitEventTimeout(&event, 10)) {
+
+        // Update the renderer
+        SDL_RenderPresent(machine->renderer);
+
+        // Handle events
+        SDL_Event event;
+        while (machine->p._virtual_time_nano > time_ns && SDL_WaitEventTimeout(&event, 5)) {
+            do {
                 if (event.type == SDL_EVENT_QUIT) {
                     running = false;
                 }
@@ -114,14 +123,10 @@ int main(int argc, char* argv[]) {
                     disk_drive_reset(machine->disk_drive);
                 }
                 time_ns = nanos();
-            }
+            } while(SDL_PollEvent(&event));
+        }
 
-            time_ns = nanos();
-        } while (machine->p._virtual_time_nano > time_ns);
         controls_input_end();
-
-        // Update the renderer
-        SDL_RenderPresent(machine->renderer);
     }
 
     // Clean up resources before exiting
