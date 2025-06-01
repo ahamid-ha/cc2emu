@@ -5,9 +5,17 @@
 
 #define MC6821_MAX_CB_COUNT 8
 
+#ifdef __GNUC__
+#define PACK( __Declaration__ ) __Declaration__ __attribute__((__packed__))
+#endif
+
+#ifdef _MSC_VER
+#define PACK( __Declaration__ ) __pragma( pack(push, 1) ) __Declaration__ __pragma( pack(pop))
+#endif
+
 struct mc6821_peripheral_status {
     union {
-        struct {
+        PACK(struct {
             unsigned c1_enable:1;
             unsigned c1_transition:1;
             unsigned ddr_access:1;
@@ -16,7 +24,7 @@ struct mc6821_peripheral_status {
             unsigned c2_output:1;  // 1 = CA2 (CB2) direction is output
             unsigned irq2:1;
             unsigned irq1:1;
-        }__attribute__((packed));
+        });
         uint8_t cr;
     };
     uint8_t ddr;

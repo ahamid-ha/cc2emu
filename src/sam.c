@@ -3,6 +3,7 @@
 #include <string.h>
 #include <errno.h>
 #include "sam.h"
+#include "utils.h"
 
 
 #define set_sam_bit(position, name) case position: data->name = is_set; break;
@@ -219,16 +220,16 @@ int sam_load_rom(struct sam_status *sam, int rom_no, const char *path) {
     }
 
     if (!fp) {
-        fprintf(stderr, "error reading rom from file %s: %s\n", path, strerror(errno));
+        log_message(LOG_ERROR, "error reading rom from file %s: %s", path, strerror(errno));
         return -1;
     }
 
     fseek(fp, 0L, SEEK_END);
     size = ftell(fp);
     if (size > max_rom_size) {
-        fprintf(stderr, "file %s is too big %ld \n", path, size);
+        log_message(LOG_ERROR, "file %s is too big %ld ", path, size);
         size = max_rom_size;
-        printf("Updated size %ld\n", size);
+        log_message(LOG_INFO, "Updated size %ld", size);
     }
     fseek(fp, 0L, SEEK_SET);
 
@@ -237,7 +238,7 @@ int sam_load_rom(struct sam_status *sam, int rom_no, const char *path) {
     while (remaining > 0) {
         size_t ret = fread(rom_contents + pos, 1, remaining > 1024 ? 1024: remaining, fp);
         if (ret <=0) {
-            fprintf(stderr, "fread() failed: %zu\n", ret);
+            log_message(LOG_ERROR, "fread() failed: %zu", ret);
             fclose(fp);
             return -2;
         }
@@ -248,7 +249,7 @@ int sam_load_rom(struct sam_status *sam, int rom_no, const char *path) {
 
     sam->rom_load_status[rom_no] = 1;
 
-    printf("Loaded rom%d %s\n", rom_no, path);
+    log_message(LOG_INFO, "Loaded rom%d %s", rom_no, path);
 
     return 0;
 }

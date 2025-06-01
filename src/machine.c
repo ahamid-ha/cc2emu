@@ -93,7 +93,7 @@ int machine_process_frame(struct machine_status *machine) {
         while (next_video_call_after_ns && machine->p._virtual_time_nano >= next_video_call) {
             next_video_call_after_ns = video_process_next(machine->video);
             next_video_call += next_video_call_after_ns;
-            // printf("machine->video->h_sync=%d\n", machine->video->h_sync);
+            // log_message(LOG_INFO, "machine->video->h_sync=%d", machine->video->h_sync);
             mc6821_interrupt_1_input(machine->sam->pia1, 0, machine->video->h_sync);
             mc6821_interrupt_1_input(machine->sam->pia1, 1, machine->video->signal_fs);
 
@@ -212,7 +212,7 @@ int machine_handle_joystick_event(struct machine_status *machine, SDL_Event *eve
                 }
                 int joy_count;
                 SDL_JoystickID *ids = SDL_GetJoysticks(&joy_count);
-                printf("Joysticks connected count: %d\n", joy_count);
+                log_message(LOG_INFO, "Joysticks connected count: %d", joy_count);
                 for (int i=0; i < 2 && i < joy_count; i++) {
                     machine->joysticks[i] = SDL_OpenJoystick(ids[i]);
                     machine->joystick_ids[i] = ids[i];
@@ -385,7 +385,7 @@ int machine_handle_input(struct machine_status *machine, SDL_Event *event) {
         if (app_settings.joy_emulation_mode[0] == Joy_Emulation_Mouse || app_settings.joy_emulation_mode[1] == Joy_Emulation_Mouse) {
             SDL_SetWindowRelativeMouseMode(machine->window, emulation);
         }
-        printf("Set Joy Emulator %d\n", emulation);
+        log_message(LOG_INFO, "Set Joy Emulator %d", emulation);
     }
 
     if ((event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) && !(event->key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT))) {

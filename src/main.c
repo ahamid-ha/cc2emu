@@ -1,8 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
+#ifndef _WIN32
 #include <execinfo.h>
+#endif
 #include <signal.h>
-#include <unistd.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <stdbool.h>
@@ -13,6 +14,7 @@
 #include "settings.h"
 
 
+#ifndef _WIN32
 void segv_handler(int sig) {
   void *array[10];
   size_t size;
@@ -22,16 +24,21 @@ void segv_handler(int sig) {
 
   // print out all the frames to stderr
   fprintf(stderr, "Error: signal %d:\n", sig);
-  backtrace_symbols_fd(array, size, STDERR_FILENO);
+  backtrace_symbols_fd(array, size, fileno(stderr));
   exit(1);
 }
+#endif
 
 int main(int argc, char* argv[]) {
+#ifndef _WIN32
     signal(SIGSEGV, segv_handler);
+#endif
+
+    init_utils();
 
     // Initialize SDL
     if (!SDL_Init(SDL_INIT_AUDIO | SDL_INIT_VIDEO | SDL_INIT_JOYSTICK)) {
-        printf("Error initializing SDL: %s\n", SDL_GetError());
+        log_message(LOG_ERROR, "Error initializing SDL: %s", SDL_GetError());
         return -1;
     }
 
@@ -43,7 +50,7 @@ int main(int argc, char* argv[]) {
     // Create a window and renderer
     machine->window = SDL_CreateWindow("Emulator", 256 * 4 + 40, 192 * 4 + 40 + 40, 0);
     if (!machine->window) {
-        printf("Failed to create window: %s\n", SDL_GetError());
+        log_message(LOG_ERROR, "Failed to create window: %s", SDL_GetError());
         SDL_Quit();
         return -1;
     }
@@ -51,16 +58,16 @@ int main(int argc, char* argv[]) {
     // Renderer for drawing graphics
     machine->renderer = SDL_CreateRenderer(machine->window, NULL);
     if (!machine->renderer) {
-        printf("Failed to create renderer: %s\n", SDL_GetError());
+        log_message(LOG_ERROR, "Failed to create renderer: %s", SDL_GetError());
         SDL_DestroyWindow(machine->window);
         SDL_Quit();
         return -1;
     }
 
     if(!SDL_SetRenderVSync(machine->renderer, -1)) {
-        printf( "Could not enable adaptive VSync, SDL error: %s. Trying VSync instead.\n", SDL_GetError());
+        log_message(LOG_ERROR,  "Could not enable adaptive VSync, SDL error: %s. Trying VSync instead.", SDL_GetError());
         if(!SDL_SetRenderVSync(machine->renderer, 1)) {
-            printf( "Could not enable VSync! SDL error: %s\n", SDL_GetError() );
+            log_message(LOG_ERROR,  "Could not enable VSync! SDL error: %s", SDL_GetError() );
         }
     }
 

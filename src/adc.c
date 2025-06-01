@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <SDL3/SDL_audio.h>
 #include "adc.h"
+#include "utils.h"
 
 void _adc_process(struct adc_status *adc) {
     int compare = 0;
@@ -53,8 +54,8 @@ void _adc_motor_cb(struct mc6821_status *pia, int peripheral_address, uint8_t va
     struct adc_status *adc = (struct adc_status *)data;
 
     adc->cassette_motor = value;
-    if (value) printf("Cassette motor on\n");
-    else printf("Cassette motor off\n");
+    if (value) log_message(LOG_INFO, "Cassette motor on");
+    else log_message(LOG_INFO, "Cassette motor off");
 }
 
 void SDLCALL _adc_sound_sample_cb(void *data, SDL_AudioStream *stream, int additional_amount, int total_amount)
@@ -152,14 +153,14 @@ int adc_load_cassette(struct adc_status *adc, const char *path) {
     }
 
     if (!SDL_LoadWAV(path, &spec, &adc->cassette_audio_buf, (Uint32*)&adc->cassette_audio_len)) {
-        printf("Error cassette loading: %s: %s\n", path, SDL_GetError());
+        log_message(LOG_ERROR, "Error cassette loading: %s: %s", path, SDL_GetError());
         return 1;
     }
     adc->next_cassette_sample_time_ns = 0;
     adc->cassette_audio_location = 0;
 
     if (spec.format != SDL_AUDIO_U8 || spec.channels != 1 || spec.freq != 9600) {
-        printf("Converting from format=%04X, channels=%d, freq=%d\n", spec.format, spec.channels, spec.freq);
+        log_message(LOG_INFO, "Converting from format=%04X, channels=%d, freq=%d", spec.format, spec.channels, spec.freq);
 
         SDL_AudioSpec dest_spec = {
             .channels  = 1,
@@ -170,7 +171,7 @@ int adc_load_cassette(struct adc_status *adc, const char *path) {
         Uint8 *dest_audio_buf;
 
         if (!SDL_ConvertAudioSamples(&spec, adc->cassette_audio_buf, (int)adc->cassette_audio_len, &dest_spec, &dest_audio_buf, (int*)&dest_audio_len)) {
-            printf("Format converting failed: %s\n", SDL_GetError());
+            log_message(LOG_ERROR, "Format converting failed: %s", SDL_GetError());
             SDL_free(adc->cassette_audio_buf);
             adc->cassette_audio_buf = NULL;
             return 1;
@@ -179,7 +180,7 @@ int adc_load_cassette(struct adc_status *adc, const char *path) {
         adc->cassette_audio_buf = dest_audio_buf;
         adc->cassette_audio_len = dest_audio_len;
     }
-    printf("Loaded wav file %s %d\n", path, adc->cassette_audio_len);
+    log_message(LOG_INFO, "Loaded wav file %s %d", path, adc->cassette_audio_len);
     return 0;
 }
 
@@ -218,7 +219,7 @@ void adc_process(struct adc_status *adc, uint64_t virtual_time_ns) {
             if (adc->sound_samples_size < SOUND_BUFFER_SIZE) {
                 adc->sound_samples[adc->sound_samples_size++] = snd;
             } else {
-                printf("Sound buffer overflow\n");
+                log_message(LOG_INFO, "Sound buffer overflow");
             }
         }
         adc->next_sound_sample_time_ns += SOUND_SAMPLE_NS;

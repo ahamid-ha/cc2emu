@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "settings.h"
+#include "utils.h"
 
 #define COLOR_GREEN 0x1cd510ff
 #define COLOR_YELLOW 0xe2db0fff
@@ -86,7 +87,7 @@ uint64_t video_start_field(struct video_status *v) {
     v->signal_fs = 1;
 
     if(!SDL_LockTexture( v->texture, NULL, (void**)&v->_pixels, &v->_pitch )) {
-        printf("SDL_LockTexture failed %s %p\n", SDL_GetError(), v->texture);
+        log_message(LOG_ERROR, "SDL_LockTexture failed %s %p", SDL_GetError(), v->texture);
         return -1;
     }
     v->_pitch = v->_pitch >> 2;
@@ -152,7 +153,7 @@ uint64_t video_process_next(struct video_status *v) {
         long byte_time;
         int pixels;
         int y = v->field_row_number - (13 + 25);
-        bool artifact_mode;
+        bool artifact_mode = false;
         uint8_t data = sam_get_vdg_data(v->sam);
         sam_vdg_increment(v->sam);
         if (v->enable_graphics) {

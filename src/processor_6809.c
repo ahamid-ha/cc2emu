@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "processor_6809.h"
+#include "utils.h"
 
 #define add_cycles(t) p->_virtual_time_nano += t * cycle_nano
 #define processor_load_8(p, addr) sam_read(p->bus, addr)
@@ -45,10 +46,10 @@ void processor_init(struct processor_state *p) {
 
 #define _bit(x) (x?'1':'0')
 void processor_dump(struct processor_state *p) {
-    printf("    Processor dump:");
-    printf("      A:%02X, B:%02X, D:%04X", p->A, p->B, p->D);
-    printf("      X:%04X, Y:%04X, U:%04X, S:%04X, PC:%04X, DP:%02X", p->X, p->Y, p->U, p->S, p->PC, p->DP);
-    printf("      C:%c, V:%c, Z:%c, N:%c, I:%c, H:%c, F:%c, E:%c\n\n", _bit(p->C), _bit(p->V), _bit(p->Z), _bit(p->N), _bit(p->I), _bit(p->H), _bit(p->F), _bit(p->E));
+    log_message(LOG_INFO, "    Processor dump:");
+    log_message(LOG_INFO, "      A:%02X, B:%02X, D:%04X", p->A, p->B, p->D);
+    log_message(LOG_INFO, "      X:%04X, Y:%04X, U:%04X, S:%04X, PC:%04X, DP:%02X", p->X, p->Y, p->U, p->S, p->PC, p->DP);
+    log_message(LOG_INFO, "      C:%c, V:%c, Z:%c, N:%c, I:%c, H:%c, F:%c, E:%c\n\n", _bit(p->C), _bit(p->V), _bit(p->Z), _bit(p->N), _bit(p->I), _bit(p->H), _bit(p->F), _bit(p->E));
 }
 
 uint16_t __get_address_direct(struct processor_state *p) {
@@ -281,8 +282,8 @@ uint16_t __get_address_indexed(struct processor_state *p) {
             add_cycles(5);
             break;
         default:
-            printf("Invalid addressing %02x\n", post_byte);
-            exit(0);
+            log_message(LOG_ERROR, "Invalid addressing %02x", post_byte);
+            p->_instruction_fault = 1;
     }
     if (indirect) {
         index = processor_load_16(p, index);
@@ -1416,7 +1417,7 @@ void execute_opcode(struct processor_state *p, uint16_t opcode) {
         op_code_extended(0x11BC, 'CMPS', 8, __opcode_sub16, &p->S, 1)
 
         default:
-            printf("Unknown OPCODE %04X at %04X\n", opcode, p->PC - 1);
+            log_message(LOG_ERROR, "Unknown OPCODE %04X at %04X", opcode, p->PC - 1);
             p->_instruction_fault = 1;
     }
 }
@@ -1505,7 +1506,7 @@ void processor_next_opcode(struct processor_state *p) {
         if (!(opcode == 0x10 || opcode == 0x11)) opcode = opcode_high + opcode;
     }
 
-    if (p->_dump_execution) printf("Execuding %04X opcode %04X %02X\n", org_address, opcode, processor_load_8(p, p->PC));
+    if (p->_dump_execution) log_message(LOG_INFO, "Execuding %04X opcode %04X %02X", org_address, opcode, processor_load_8(p, p->PC));
     execute_opcode(p, opcode);
     if (p->_dump_execution) processor_dump(p);
 }

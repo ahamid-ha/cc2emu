@@ -1,11 +1,11 @@
 #include <stdlib.h>
 #include <stdio.h>
-#include <unistd.h>
 #include <string.h>
 #include <confuse.h>
 #include <errno.h>
 #include <SDL3/SDL_filesystem.h>
 #include "settings.h"
+#include "utils.h"
 
 #define ORG_NAME "cc2emu"
 #define APP_NAME "cc2emu"
@@ -24,9 +24,9 @@ void settings_init(void) {
     app_settings.joy_emulation_mode[1] = Joy_Emulation_None;
 
     app_settings.rom_basic_path = strdup(ROM_BASIC_DEFAULT_PATH);
-    if (access(ROM_EXTENDED_BASIC_DEFAULT_PATH, F_OK) == 0)
+    if (is_file_readable(ROM_EXTENDED_BASIC_DEFAULT_PATH))
         app_settings.rom_extended_basic_path = strdup(ROM_EXTENDED_BASIC_DEFAULT_PATH);
-    if (access(ROM_DISK_BASIC_DEFAULT_PATH, F_OK) == 0)
+    if (is_file_readable(ROM_DISK_BASIC_DEFAULT_PATH))
         app_settings.rom_disc_basic_path = strdup(ROM_DISK_BASIC_DEFAULT_PATH);
     app_settings.artifact_colors = 1;
 
@@ -50,18 +50,20 @@ void settings_init(void) {
 
     const char *base_pref_path = SDL_GetPrefPath(ORG_NAME, APP_NAME);
     if (!base_pref_path) {
-        fprintf(stderr, "Error initializing configuration: %s\n", SDL_GetError());
+        log_message(LOG_ERROR, "Error initializing configuration: %s", SDL_GetError());
         exit(1);
     }
 
-    if (asprintf(&app_settings.config_path, "%sconfig.ini", base_pref_path) == -1) {
-        fprintf(stderr, "Error initializing configuration: path allocation error\n");
+    app_settings.config_path = malloc(strlen("config.ini") + strlen(base_pref_path) + 1);
+    if (!app_settings.config_path) {
+        log_message(LOG_ERROR, "Error initializing configuration: path allocation error");
         exit(1);
     }
+    sprintf(app_settings.config_path, "%sconfig.ini", base_pref_path);
 
-    printf("Reading the configuration file %s\n", app_settings.config_path);
+    log_message(LOG_INFO, "Reading the configuration file %s", app_settings.config_path);
     if(cfg_parse(cfg, app_settings.config_path) == CFG_FILE_ERROR) {
-        fprintf(stderr, "Error reading the configuration file %s. Ignoring.\n", app_settings.config_path);
+        log_message(LOG_ERROR, "Error reading the configuration file %s. Ignoring.", app_settings.config_path);
     }
 }
 
@@ -81,7 +83,7 @@ void settings_save(void) {
 
     FILE *fp = fopen(app_settings.config_path, "w");
     if (!fp) {
-        fprintf(stderr, "error updating the configuration file %s: %s\n", app_settings.config_path, strerror(errno));
+        log_message(LOG_ERROR, "error updating the configuration file %s: %s", app_settings.config_path, strerror(errno));
         return;
     }
     cfg_print(cfg, fp);

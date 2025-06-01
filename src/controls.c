@@ -8,6 +8,7 @@
 #include <SDL3_image/SDL_image.h>
 #include "controls.h"
 #include "settings.h"
+#include "utils.h"
 #include "nk_sdl.h"
 #include "icons/joystick.xpm"
 #include "icons/joystick_kbd.xpm"
@@ -20,6 +21,7 @@ struct {
 
     bool settings_window_state;
 
+    enum nk_collapse_states settings_logs_state;
     enum nk_collapse_states settings_cartridge_state;
     enum nk_collapse_states settings_disks_state;
     enum nk_collapse_states settings_cassette_state;
@@ -107,7 +109,7 @@ static void SDLCALL _disk_selection_cb(void* data, const char* const* filelist, 
 {
     int disk_no = (intptr_t)data;
     if (!filelist) {
-        fprintf(stderr, "An error occured: %s", SDL_GetError());
+        log_message(LOG_ERROR, "An error occured: %s", SDL_GetError());
         return;
     } else if (!*filelist) {
         return;
@@ -124,7 +126,7 @@ static void SDLCALL _disk_selection_cb(void* data, const char* const* filelist, 
 static void SDLCALL _cassette_selection_cb(void* data, const char* const* filelist, int filter)
 {
     if (!filelist) {
-        fprintf(stderr, "An error occured: %s", SDL_GetError());
+        log_message(LOG_ERROR, "An error occured: %s", SDL_GetError());
         return;
     } else if (!*filelist) {
         return;
@@ -141,7 +143,7 @@ static void SDLCALL _cassette_selection_cb(void* data, const char* const* fileli
 static void SDLCALL _cartridge_selection_cb(void* data, const char* const* filelist, int filter)
 {
     if (!filelist) {
-        fprintf(stderr, "An error occured: %s", SDL_GetError());
+        log_message(LOG_ERROR, "An error occured: %s", SDL_GetError());
         return;
     } else if (!*filelist) {
         return;
@@ -179,13 +181,17 @@ static void SDLCALL _disk_new_cb(void* data, const char* const* filelist, int fi
 {
     int disk_no = (intptr_t)data;
     if (!filelist) {
-        fprintf(stderr, "An error occured: %s", SDL_GetError());
+        log_message(LOG_ERROR, "An error occured: %s", SDL_GetError());
         return;
     } else if (!*filelist) {
         return;
     }
 
     const char *rom_path = *filelist;
+
+    if (disk_drive_create_empty_image(rom_path)) {
+        return;
+    }
 
     if(disk_drive_load_disk(controls.machine->disk_drive, disk_no, rom_path)) {
         if (app_settings.disks[disk_no].path) free(app_settings.disks[disk_no].path);
@@ -221,6 +227,18 @@ void _settings_window_display() {
     struct nk_style_button button_style_original = controls.ctx->style.button;
     if(nk_begin(controls.ctx, "Settings", nk_rect(50, 50, window_w - 100, window_h - 100), NK_WINDOW_BORDER | NK_WINDOW_TITLE))
     {
+        if (nk_tree_state_push(controls.ctx, NK_TREE_NODE, "Logs", &controls.settings_logs_state)) {
+            nk_layout_row_template_begin(controls.ctx, 300);
+            nk_layout_row_template_push_dynamic(controls.ctx);
+            nk_layout_row_template_end(controls.ctx);
+            nk_edit_string_zero_terminated(
+                controls.ctx,
+                NK_EDIT_SELECTABLE | NK_EDIT_MULTILINE | NK_EDIT_GOTO_END_ON_ACTIVATE | NK_EDIT_CLIPBOARD| NK_EDIT_ALWAYS_INSERT_MODE,
+                log_get_buffer(), LOG_BUFFER_SIZE, nk_filter_ascii  /* nk_filter_ascii: text type */
+            );
+            nk_tree_state_pop(controls.ctx);
+        }
+
         if (nk_tree_state_push(controls.ctx, NK_TREE_NODE, "Video", &controls.settings_cartridge_state)) {
             int artifact_colors = app_settings.artifact_colors == cfg_true ? 1 : 0;
             nk_checkbox_label(controls.ctx, "Enable Artifact Colors", &artifact_colors);
@@ -488,6 +506,12 @@ void controls_display() {
 
     }
     nk_end(controls.ctx);
+
+
+    if (log_error_status_clear()) {
+        _settings_open_window(false);
+        controls.settings_logs_state = true;
+    }
 
     if (controls.settings_window_state){
         _settings_window_display();

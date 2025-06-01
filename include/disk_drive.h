@@ -3,7 +3,9 @@
 
 #include <inttypes.h>
 #include <stdbool.h>
-
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 struct disk_drive_status {
     union {
@@ -53,7 +55,11 @@ struct disk_drive_status {
 
     uint8_t _seek_track_target;
 
-    uint8_t *_drive_data[4];
+#ifdef _WIN32
+    HANDLE _drive_file_handle[4];
+    HANDLE _drive_map_handle[4];
+#endif
+    uint8_t* _drive_data[4];
     size_t _drive_data_length[4];
     bool is_write_protect[4];
     int step_direction;
@@ -72,5 +78,6 @@ void disk_drive_write_register(void *drive, uint16_t address, uint8_t value);
 void disk_drive_process_next(struct disk_drive_status *drive);
 int disk_drive_load_disk(struct disk_drive_status *drive, int drive_no, const char *path);
 uint8_t *_get_drive_data(struct disk_drive_status *drive);
+int disk_drive_create_empty_image(const char* path);
 
 #endif

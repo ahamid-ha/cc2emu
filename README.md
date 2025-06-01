@@ -31,16 +31,19 @@ Also the source is shipped with the following:
 
 ### Compile
 ```
+mkdir -p build
+cd build
+cmake ..
 make
 ```
 If the build was successful a single binary file will be generate build/cc2emu.
 
-It was tested only under Linux.
+It was tested under Linux and windows.
 
 ## Run
 The emulator can be started by executing the following binary:
 ```
-./build/cc2emu
+./cc2emu
 ```
 Currently it doesn't support any command line arguments.
 By default it will try to load the ROM files from the following paths:
