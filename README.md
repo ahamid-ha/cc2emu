@@ -42,7 +42,8 @@ If the build was successful a single binary file will be generate build/cc2emu.
 
 ### Windows
 Tested with Visual Studio Community 2024 with CMake and vcpkg support.
-Open the project folder with Visual Studio, wait for the packages install complete and the start (with or without debug).
+
+Open the project folder with Visual Studio, wait for the packages install complete and then click on start (with or without debug).
 
 ## Run
 The emulator can be started by executing the following binary:
