@@ -14,7 +14,7 @@ file(GLOB SRC_FILES "src/*.c")
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     # Windows-specific settings
-    find_package(unofficial::libconfuse CONFIG REQUIRED)
+    find_package(unofficial-libconfuse CONFIG REQUIRED)
 else ()
     # Unix-like systems (Linux, macOS, etc.)
     find_package(PkgConfig REQUIRED)

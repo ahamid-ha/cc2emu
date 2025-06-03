@@ -30,6 +30,8 @@ Also the source is shipped with the following:
 - [Nuklear](https://immediate-mode-ui.github.io/Nuklear/)
 
 ### Compile
+
+#### Linux
 ```
 mkdir -p build
 cd build
@@ -38,7 +40,9 @@ make
 ```
 If the build was successful a single binary file will be generate build/cc2emu.
 
-It was tested under Linux and windows.
+### Windows
+Tested with Visual Studio Community 2024 with CMake and vcpkg support.
+Open the project folder with Visual Studio, wait for the packages install complete and the start (with or without debug).
 
 ## Run
 The emulator can be started by executing the following binary:
