@@ -26,10 +26,10 @@ find_package(SDL3_image CONFIG REQUIRED)
 find_package(SDL3 CONFIG REQUIRED)
 
 #include_directories(${SDL3_INCLUDE_DIRS} ${LibConfuse_INCLUDE_DIRS} ${SDL3_IMAGE_INCLUDE_DIRS})
-add_executable(cc2emu ${SRC_FILES})
 
 if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     # Windows-specific linking
+    add_executable(cc2emu WIN32 ${SRC_FILES})
     target_link_libraries(cc2emu
         SDL3::SDL3
         unofficial::libconfuse::libconfuse
@@ -37,6 +37,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Windows")
     )
 else ()
     # Unix-like systems linking
+    add_executable(cc2emu ${SRC_FILES})
     target_link_libraries(cc2emu
         SDL3::SDL3
         ${LIBCONFUSE_LIBRARIES}
