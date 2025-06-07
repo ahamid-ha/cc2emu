@@ -63,7 +63,7 @@ void settings_init(void) {
 
     log_message(LOG_INFO, "Reading the configuration file %s", app_settings.config_path);
     if(cfg_parse(cfg, app_settings.config_path) == CFG_FILE_ERROR) {
-        log_message(LOG_ERROR, "Error reading the configuration file %s. Ignoring.", app_settings.config_path);
+        log_message(LOG_INFO, "Error reading the configuration file %s. Ignoring.", app_settings.config_path);
     }
 }
 
