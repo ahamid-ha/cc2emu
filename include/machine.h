@@ -24,7 +24,7 @@ struct machine_status {
     uint64_t _next_disk_drive_call;  // tracks the disk timing
     uint64_t _next_keyboard_poll_ns;
 
-    int settings_page_is_open;
+    bool settings_page_is_open;
 
     int _joy_emulation[2];    // enable/disable keyboard/mouse joystick emulation
     SDL_Joystick *joysticks[2];

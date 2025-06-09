@@ -370,7 +370,12 @@ int machine_handle_joystick_event(struct machine_status *machine, SDL_Event *eve
 }
 
 int machine_handle_input(struct machine_status *machine, SDL_Event *event) {
-    if (machine->settings_page_is_open) return 0;
+    if (machine->settings_page_is_open) {
+        if (event->type == SDL_EVENT_KEY_DOWN && event->key.key == SDLK_ESCAPE) {
+            machine->settings_page_is_open = false;
+        }
+        return 0;
+    }
 
     if (machine_handle_joystick_event(machine, event))
         return 1;

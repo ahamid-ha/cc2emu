@@ -19,8 +19,6 @@ struct {
 
     float joystick_selection;  // to be able to track which joystick is accessed
 
-    bool settings_window_state;
-
     enum nk_collapse_states settings_logs_state;
     enum nk_collapse_states settings_cartridge_state;
     enum nk_collapse_states settings_disks_state;
@@ -73,7 +71,7 @@ void controls_reinit(void) {
 
 void _settings_close_window()
 {
-    controls.settings_window_state = false;
+    controls.machine->settings_page_is_open = false;
 }
 
 void _settings_open_window(bool open_all)
@@ -85,12 +83,12 @@ void _settings_open_window(bool open_all)
     controls.settings_cassette_state = section_state;
     controls.settings_joystick_state = section_state;
 
-    controls.settings_window_state = true;
+    controls.machine->settings_page_is_open = true;
 }
 
 void _settings_toggle_window(bool open_all)
 {
-    if (controls.settings_window_state) {
+    if (controls.machine->settings_page_is_open) {
         _settings_close_window();
     } else {
         _settings_open_window(open_all);
@@ -513,11 +511,8 @@ void controls_display() {
         controls.settings_logs_state = true;
     }
 
-    if (controls.settings_window_state){
+    if (controls.machine->settings_page_is_open){
         _settings_window_display();
-        controls.machine->settings_page_is_open = 1;
-    } {
-        controls.machine->settings_page_is_open = 0;
     }
 
     nk_sdl_render(NK_ANTI_ALIASING_ON);
